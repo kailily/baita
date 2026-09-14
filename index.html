@@ -843,6 +843,7 @@ function newGame(){
     userPosts:[],              // 论坛用户发帖
     userAffairs:[],            // 日常事务记录
     sootheReqs:[],             // 疏导预约申请 {from,to,status:'pending'|'accepted'|'rejected',time,note}
+    sootheNext:0,              // 下一条疏导申请到达的时间戳（向导不定期刷新）
     schedule:[],               // 向导时间表 {who,time,kind}
     userContacts:[],           // 通讯录自建联系人
     relation:{},               // 名字 -> 关系类型（恋/好友/敬重/同事/搭档）
@@ -2205,6 +2206,64 @@ function tickClock(){
   const lc=$('lockClock'); if(lc) lc.textContent=`${hh}:${mm}`;
   const lt=$('lockTime'); if(lt) lt.textContent=`${hh}:${mm}`;
   const ld=$('lockDate'); if(ld){ const w=['周日','周一','周二','周三','周四','周五','周六'][d.getDay()]; ld.textContent=`${w} · ${d.getMonth()+1}月${d.getDate()}日`; }
+  sootheTick();                       // 向导的疏导申请会不定期刷新
+}
+
+/* ============ 向导：疏导申请不定期刷新 ============ */
+const SOOTHE_TYPES=[
+  ['表层疏导 · 卸除杂念','常规 · 48 小时内安排即可','明日 10:00'],
+  ['表层疏导 · 屏障加固','常规 · 三天内即可','后天 15:30'],
+  ['深层净化 · 精神图景','优先 · 24 小时内','今夜 21:00 后'],
+  ['应急处置 · 过载压制','紧急 · 尽快','现在'],
+  ['对频疏导 · 链接校准','常规 · 本周内','周六 09:30'],
+];
+const SOOTHE_NOTES=[
+  '刚从外勤回来，耳朵里一直嗡嗡的，屏障边缘发烫。能排个时段吗？随便哪个向导都行。',
+  '不算大事，就是这几晚老睡不着，闭上眼全是白噪音。想找个人把杂念卸一下。',
+  '上次那单的黑哨痕迹好像粘在图景里了，我自己弄不掉。想约一次深度净化。',
+  '今天训练场里差点过载，被队友按住了。想赶在彻底炸之前处理一下。',
+  '轻伤没事，是精神上的。我不太会说话，你让我坐着就行。',
+  '精神体这几天一直不安分，我猜是我自己不对。想请你看看它，也看看我。',
+  '不用特别照顾我，我排最后也行。就是别让我一个人待着。',
+  '例会上被点了几句，回去就开始耳鸣。我知道不至于，可身体先反应了。',
+  '想约一次对频，和搭档链接总差半拍，怕拖累他/她。',
+  '我以前不太信疏导，这回信了。麻烦你了。',
+];
+function nextSootheGap(){ return (90+rnd(150))*1000; }          // 1.5~4 分钟一条
+function newSootheReq(){
+  if(!G.char || C().identity!=='guide') return false;
+  if(!G.sootheReqs) G.sootheReqs=[];
+  const pend=G.sootheReqs.filter(r=>r.to===C().name && r.status==='pending');
+  if(pend.length>=4) return false;                                // 待处理最多堆 4 条
+  const pool=PARTNERS.concat(OTHERS).filter(p=>p.identity==='sentinel' && !pend.some(r=>r.from===p.name));
+  if(!pool.length) return false;
+  const who=pick(pool);
+  const t=pick(SOOTHE_TYPES);
+  const lvl=t[1];
+  const urgent=lvl.indexOf('紧急')===0;
+  G.sootheReqs.unshift({
+    from:who.name, to:C().name, status:'pending', time:nowStr(),
+    no:'SN-'+(1000+rnd(8999)), type:t[0], level:lvl, slot:t[2],
+    room:'待向导指定', allowAlt:!urgent && rnd(2)===0,
+    overload:urgent?(78+rnd(20)):(40+rnd(45)),
+    rank:who.rank||pick(['A','B','B','C']), animal:who.animal||pick(['狼','隼','猞猁','鹿','豹']),
+    note:pick(SOOTHE_NOTES),
+  });
+  return true;
+}
+function sootheTick(){
+  if(!G.char || C().identity!=='guide' || G.locked) return;
+  const now=Date.now();
+  if(!G.sootheNext){ G.sootheNext=Date.now()+(45+rnd(75))*1000; return; }   // 入册后 45~120 秒来第一条
+  if(now < G.sootheNext) return;
+  G.sootheNext=now+nextSootheGap();
+  if(newSootheReq()){
+    touchSave();
+    toast('📥 收到一条新的疏导申请');
+    refreshNavBadges();
+    if(G.app==='soothe_book') renderSootheBook();
+    else if(G.app==='home') renderHome();
+  }
 }
 function unlock(){ G.locked=false; $('lock').style.display='none'; renderHome(); }
 
@@ -3458,7 +3517,6 @@ function renderChatList(){
       ${extras?`<div class="stat-title" style="font-weight:700;color:var(--dim);font-size:13px;margin:2px 0 8px;">最近联系（${extraKeys.length}）</div>${extras}`:''}
       <div class="stat-title" style="font-weight:700;color:var(--dim);font-size:13px;margin:2px 0 8px;">固定会话</div>
       ${items}
-      <div class="muted" style="font-size:11px;text-align:center;margin-top:14px;">长按 / 右键一条可删除 · 通讯录在「电话」里</div>
     </div>`;
   renderTabbar();
 }
@@ -5060,7 +5118,7 @@ function hangUp(){
 function dailyRow(d){
   const gs=gameNamesOf(d);
   const chip = gs.length
-    ? ` <span class="pill" style="font-size:9px;color:var(--gold);border-color:rgba(255,212,121,.5)">🎮 ${gs.join(' / ')}${gs.length>1?'（按科目抽）':''}</span>`
+    ? ` <span class="pill" style="font-size:9px;color:var(--gold);border-color:rgba(255,212,121,.5)">🎮 ${gs.join(' / ')}</span>`
     : '';
   return `<div class="thread" onclick="doDaily('${d.id}')">
     <div class="av" style="background:#26334f">${d.ico}</div>
