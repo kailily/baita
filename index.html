@@ -4910,10 +4910,34 @@ function prosodyOf(seg, prof, i){
   return { rate:Math.max(0.6, Math.min(1.5, rate)), pitch:Math.max(0.5, Math.min(1.6, pitch)), pause };
 }
 let SPEAK_TOKEN=0;
+/* 手机（iOS Safari / 部分安卓）要求"第一次朗读发生在用户手势里"，否则之后全部静音。
+   所以第一次点屏幕时先用一个静音的空句子把语音引擎解锁掉。 */
+let SPEECH_UNLOCKED=false;
+function unlockSpeech(){
+  if(SPEECH_UNLOCKED) return;
+  try{
+    if(!window.speechSynthesis || typeof SpeechSynthesisUtterance==='undefined') return;
+    SPEECH_UNLOCKED=true;
+    window.speechSynthesis.resume();
+    const u=new SpeechSynthesisUtterance(' ');
+    u.volume=0; u.rate=2; u.lang='zh-CN';
+    window.speechSynthesis.speak(u);
+  }catch(e){}
+}
+if(typeof document!=='undefined'){
+  ['touchstart','touchend','mousedown','click','keydown'].forEach(function(ev){
+    try{ document.addEventListener(ev, unlockSpeech, {passive:true}); }catch(e){}
+  });
+}
+function speechSupported(){ return !!(window.speechSynthesis && typeof SpeechSynthesisUtterance!=='undefined'); }
 function speakText(t, name){
   if(!G.voice) return;
   try{
-    if(!window.speechSynthesis || typeof SpeechSynthesisUtterance==='undefined') return;
+    if(!speechSupported()) return;
+    unlockSpeech();
+    /* 先 resume（Chrome 长时间朗读会被自动暂停），再 cancel，两者与 speak 之间留一帧，
+       否则部分机型会把这次朗读直接吞掉 */
+    window.speechSynthesis.resume();
     window.speechSynthesis.cancel();
     const token=++SPEAK_TOKEN;
     const prof=name?voiceProfileOf(name):{rate:1.0,pitch:1.0,volume:1,vIdx:0};
@@ -4921,9 +4945,12 @@ function speakText(t, name){
     const v=name?voiceFor(name):null;
     const segs=splitProsody(t);
     if(!segs.length) return;
+    /* 每 5 秒 resume 一次，防 Chrome「读满 15 秒自动停顿」的老问题 */
+    const keep=setInterval(function(){ try{ window.speechSynthesis.resume(); }catch(e){} }, 5000);
+    const done=function(){ clearInterval(keep); };
     const step=(idx)=>{
-      if(token!==SPEAK_TOKEN) return;            // 有新通话/新消息，立刻让位
-      if(idx>=segs.length) return;
+      if(token!==SPEAK_TOKEN){ done(); return; }   // 有新通话/新消息，立刻让位
+      if(idx>=segs.length){ done(); return; }
       const seg=segs[idx];
       const pr=prosodyOf(seg, prof, idx);
       const u=new SpeechSynthesisUtterance(seg);
@@ -4931,11 +4958,11 @@ function speakText(t, name){
       u.rate=pr.rate; u.pitch=pr.pitch;
       u.volume=Math.max(0, Math.min(1, prof.volume*(0.97+((idx%3)*0.015))));
       if(v) u.voice=v;
-      u.onend=()=>{ if(token===SPEAK_TOKEN) setTimeout(()=>step(idx+1), pr.pause); };
-      u.onerror=()=>{ if(token===SPEAK_TOKEN) setTimeout(()=>step(idx+1), 70); };
+      u.onend=()=>{ if(token===SPEAK_TOKEN) setTimeout(()=>step(idx+1), pr.pause); else done(); };
+      u.onerror=()=>{ if(token===SPEAK_TOKEN) setTimeout(()=>step(idx+1), 70); else done(); };
       window.speechSynthesis.speak(u);
     };
-    step(0);
+    setTimeout(()=>step(0), 60);                  // 让 cancel 先落地
   }catch(e){}
 }
 if(typeof window!=='undefined' && window.speechSynthesis){
@@ -5066,7 +5093,10 @@ function callPerson(name){
   stopDg();
   G.app='phone';
   markCallsSeen(name);          // 回拨后该联系人的未接红角标清掉
+  unlockSpeech();               // 拨号是一次用户手势：顺手把语音引擎解锁
   refreshVoices();
+  if(!speechSupported()){ toast('这台设备的浏览器不支持语音朗读'); }
+  else if(!G.voice){ toast('语音已关闭 —— 点右上角喇叭开启'); }
   const rel=callRelOf(name);
   G.call={name, rel, step:0, phase:'dialing', t0:Date.now(), lines:[]};
   renderCall();
