@@ -573,17 +573,15 @@
   .dial-btn{position:relative;}
   .dial-dot{position:absolute;top:-3px;right:-3px;width:9px;height:9px;border-radius:50%;background:var(--bad);
     box-shadow:0 0 8px rgba(255,95,138,.9);border:1px solid #06121f;}
-  /* 右滑删除 */
-  .swipe-row{position:relative;overflow:hidden;border-radius:5px;margin-bottom:8px;}
-  .swipe-row>.swipe-body{position:relative;z-index:2;transition:transform .16s ease-out;will-change:transform;}
-  .swipe-row>.swipe-body>.thread{margin-bottom:0;}
-  .swipe-row>.swipe-del{position:absolute;top:0;right:0;bottom:0;width:78px;z-index:1;
-    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
-    background:linear-gradient(180deg,rgba(120,20,40,.95),rgba(70,10,24,.95));
-    border:1px solid rgba(255,95,138,.5);border-radius:5px;color:#ffd7e2;font-size:16px;cursor:pointer;
-    font-family:var(--mono);}
-  .swipe-row>.swipe-del span{font-size:10px;letter-spacing:1px;}
-  .swipe-row>.swipe-del:active{background:linear-gradient(180deg,rgba(160,26,54,.98),rgba(90,12,30,.98));}
+  /* 「对方正在输入…」 */
+  .bubble.typing{display:flex;align-items:center;gap:6px;color:var(--dim);font-size:12px;}
+  .tdots{display:inline-flex;gap:3px;}
+  .tdots i{width:5px;height:5px;border-radius:50%;background:var(--dim);display:block;animation:tdot 1.1s infinite;}
+  .tdots i:nth-child(2){animation-delay:.16s;} .tdots i:nth-child(3){animation-delay:.32s;}
+  @keyframes tdot{0%,60%,100%{opacity:.25;transform:translateY(0)}30%{opacity:1;transform:translateY(-2px)}}
+  /* 行内菜单容器（长按/右键） */
+  .menu-row{border-radius:5px;}
+  .menu-row>.thread{margin-bottom:0;}
   /* 长按 / 右键菜单 */
   .row-menu{position:fixed;z-index:80;padding:5px;border-radius:7px;
     background:linear-gradient(180deg,rgba(10,22,38,.98),rgba(6,13,24,.99));
@@ -887,6 +885,7 @@ function newGame(){
     dg:null,                   // 疏导小游戏运行时
     lastGame:null,             // 上一次跑的小游戏（同科目避免连续重复）
     sms:[],                    // 短信：系统通知 / 垃圾短信 / 广告
+    chatLog:{},                // 会话记录：threadId -> [{me, them:[]}]（存档会带走）
     voiceProfiles:{},          // 临时声线（自建联系人之类没有档案的人）
     camWho:null,               // 相机 AI 成像：指定人物（null=随机）
     camMode:'auto',            // auto=随机有人物 / solo=纯场景 / duo=一定有人物
@@ -898,7 +897,7 @@ function newGame(){
   buildSMS();
 }
 function C(){ return G.char; }
-function setChar(c){ G.char=c; G.created=true; }
+function setChar(c){ G.char=c; G.created=true; touchSave(); }
 
 /* ============ 评级 / 搭档推导 ============ */
 function deriveRank(attr, identity){
@@ -947,33 +946,33 @@ const CHAT = {
   partner:{
     title:'搭档', color:'#1c2a52', always:true,
     steps:[
-      {npc:'（链接刚接上，对方先发了条）在吗？今天那单收得早，我正盯着终端发呆，想着要不要找你说说话。',
+      {npc:['在吗？','刚收队，手上还沾着灰'],
        replies:[
-         {label:'在的，我也刚闲下来',t:'温柔',reply:'那就好。还怕你嫌我黏人。'},
-         {label:'找我说话？太阳打西边出来了',t:'玩笑',reply:'（笑）难得。夸你一句还不行？'},
-         {label:'（发张静室的图）刚躺下缓神',t:'沉默',reply:'啧，倒是会享受。下次带我一个。'},
+         {label:'在的，我也刚闲下来',t:'温柔',reply:['那就好。','还怕你在忙，不敢打扰。']},
+         {label:'哟，今天怎么想起我了',t:'玩笑',reply:['……说得我平时不理你一样。','行吧，是有点想你。']},
+         {label:'（发过去一张静室的照片）',t:'沉默',reply:['躺平了？','下次带我一个。']},
        ]},
-      {npc:()=>`说真的，跟你组队之后，我过载的次数肉眼可见地少了。以前一到夜里就嗡嗡响，现在……安静多了。你那向导素，莫名让人安心。`,
+      {npc:['说真的','跟你搭上线之后，夜里安静多了'],
        replies:[
-         {label:'（笑）那以后多吸点',t:'撩',reply:'……你这人，怎么什么话都敢往直了说。'},
-         {label:'我也觉得，靠近你就不那么吵了',t:'直球',reply:'（顿了顿）……我也是。所以这搭档，我认了。'},
-         {label:'是白塔配比好，不是我厉害',t:'客套',reply:'少来。配比再好，也得两个人合得来。'},
-         {label:'那你欠我一顿',t:'玩笑',reply:'行，静室楼下的粥铺，我请。'},
+         {label:'那我就多陪着点',t:'直球',reply:['……你这人。','行，你说的。']},
+         {label:'是塔里配比好，跟我没关系',t:'客套',reply:['少来。','配比再准，也得两个人合得来。']},
+         {label:'那你欠我一顿',t:'玩笑',reply:['请。','楼下粥铺，我认。']},
+         {label:'（没说话，往你那边靠了靠）',t:'沉默',reply:['……嗯。']},
        ]},
-      {npc:()=>`不瞒你说，我昨晚又梦见结合热了。梦见自己没忍住，把你吓跑。醒来手心全是汗。`,
+      {npc:['昨晚又梦见结合热了','梦见把你吓跑'],
        replies:[
-         {label:'我哪那么容易跑',t:'温柔',reply:'……有你这句话，我今晚大概能睡个踏实觉。'},
-         {label:'真上来了我陪你熬',t:'关心',reply:'（半晌）……你知不知道，这种话很犯规。'},
-         {label:'噩梦而已，别自己吓自己',t:'强硬',reply:'也是。想太多，本来就是哨兵的毛病。'},
+         {label:'我哪那么容易跑',t:'温柔',reply:['……有你这句话，我今晚能睡踏实点。']},
+         {label:'真上来了我陪你熬',t:'关心',reply:['别。','真到那天，你先跑。']},
+         {label:'梦而已，别自己吓自己',t:'强硬',reply:['也是。','想太多，本来就是哨兵的毛病。']},
        ]},
-      {npc:()=>`（沉默了好一会儿）……其实我很少跟人聊这些。当了太久的刀，忘了怎么当个人。跟你聊，不累。`,
+      {npc:['其实我很少跟人说这些','当了太久刀，忘了怎么当人'],
        replies:[
-         {label:'那就一直聊下去',t:'直球',reply:'嗯。说定了，赖不掉。',lock:'close'},
-         {label:'你早就是了，只是忘了',t:'温柔',reply:'……被你这么一说，好像是有点道理。'},
-         {label:'我也一样，在你面前才松得下来',t:'示弱',reply:'（轻笑）那咱俩，算是彼此的静室了。'},
+         {label:'那就一直说下去',t:'直球',reply:['嗯。','说定了，赖不掉。'],lock:'close'},
+         {label:'在我这儿不用当刀',t:'温柔',reply:['……这句我记住了。']},
+         {label:'我也一样，在你这儿才松得下来',t:'示弱',reply:['（笑）那咱俩，算不算互相的静室。']},
        ]},
     ],
-    close:'与搭档的对话告一段落，链接里的暖意却留了下来。',
+    close:'链接那头的呼吸慢下来了。',
   },
   mentor:{
     title:'首席·时砚', color:'#14303a', always:true,
@@ -1005,17 +1004,18 @@ const CHAT = {
   romance:{
     title:'搭档·心动', color:'#3a1430', requireAff:55,
     steps:[
-      {npc:()=>`（深夜）睡不着。手指在终端上停了很久，最后还是发了过来——我好像，有点依赖你了。不是「搭档」那种依赖。`,
+      {npc:['睡不着','手指在屏上停了很久'],
        replies:[
-         {label:'（心跳漏了一拍）我也是',t:'直球',reply:'……你这么说，我反倒不知道接什么了。',lock:'date'},
-         {label:'依赖我，不好吗？',t:'撩',reply:'好。就是有点，超出任务范畴了。'},
-         {label:'那就别只当我是搭档',t:'依赖',reply:'（很久的沉默）……你这是，在给我名分？',lock:'date'},
+         {label:'我也是，正好',t:'直球',reply:['……那就好。','我好像有点依赖你了。','不是搭档那种。'],lock:'date'},
+         {label:'这么晚还不睡，明天有任务',t:'关心',reply:['知道啦。','但我现在不想聊任务。']},
+         {label:'依赖我，不好吗？',t:'撩',reply:['好。','就是有点，超出任务范畴了。']},
+         {label:'那就别只当我是搭档',t:'依赖',reply:['（很久的沉默）','……你这是，在给我名分？'],lock:'date'},
        ]},
-      {npc:()=>`（他/她发来一张塔顶的照片，风把头发吹得乱七八糟）明天休整。要不要上来坐坐？就我们俩，不报备，不说给白塔听。`,
+      {npc:['明天休整','上来坐坐？','就我们俩，不报备'],
        replies:[
-         {label:'去，几点？',t:'直球',reply:'落日那班。我占好位置了。',lock:'date'},
-         {label:'不怕被逮到？',t:'玩笑',reply:'（笑）逮到就逮到，反正我赖定你了。',lock:'date'},
-         {label:'先说好，只是看风景',t:'逞强',reply:'（叹气）行吧，风景。嘴硬。',lock:'date'},
+         {label:'去，几点',t:'直球',reply:['落日那班。','位置我占了。'],lock:'date'},
+         {label:'不怕被逮到？',t:'玩笑',reply:['（笑）逮到就逮到。','反正我赖定你了。'],lock:'date'},
+         {label:'先说好，只是看风景',t:'逞强',reply:['行，风景。','……嘴硬。'],lock:'date'},
        ]},
     ],
     date:'你赴了那场约。塔顶的风很大，他/她却把你的手攥得很紧。有些事，不必白塔批准。',
@@ -1240,7 +1240,7 @@ const MISSIONS = [
       hook:'一名哨兵的精神图景里，养着两头精神体——黑豹与白鹿，本是护主的双翼，如今却在他心里互相撕咬。你潜进他的图景，去当一回，劝架的人。'},
     start:'t_brief', first:'t_gate',
     scenes:{
-      t_brief:{ chapter:'白塔 · 任务简报', story:()=>`【系统任务简报 · 双面塔】编号 T-05，等级 甲级。<br><br>哨兵<b>宴之</b>在一次任务归来后，精神图景里养着的两头精神体——<b>黑豹</b>与<b>白鹿</b>——突然反目。黑豹要他永远冷硬、不再受伤；白鹿要他柔软、去爱人。两头兽在他心里昼夜撕咬，把人撕得日渐空洞。<br><br>白塔探查：这不是病，是他在那次任务里，同时失去了「该恨的人」和「该爱的人」。你作为向导潜进他的图景，不是去杀哪一头，而是去，劝它们，重新做回他的两翼。`,
+      t_brief:{ chapter:'白塔 · 任务简报', story:()=>`【系统任务简报 · 双面塔】编号 T-05，等级 特级。<br><br>哨兵<b>宴之</b>在一次任务归来后，精神图景里养着的两头精神体——<b>黑豹</b>与<b>白鹿</b>——突然反目。黑豹要他永远冷硬、不再受伤；白鹿要他柔软、去爱人。两头兽在他心里昼夜撕咬，把人撕得日渐空洞。<br><br>白塔探查：这不是病，是他在那次任务里，同时失去了「该恨的人」和「该爱的人」。你作为向导潜进他的图景，不是去杀哪一头，而是去，劝它们，重新做回他的两翼。`,
         title:'任务简报 · 双面塔', sub:'白塔派遣 · 任务·S级 · 精神图景 / 对峙',
         body:[{t:'联络官：「记住，黑豹和白鹿都是他。你劝不和，就是劝他，别再把自己撕成两半。」'}],
         opts:()=>[{type:'goto',to:G.created?'m_team':'intro',ico:'✅',label:'确认接取，进入任务',hint:G.created?'已入册 · 直接选择组队方式':'随后白塔将为你指派搭档'}] },
@@ -1650,11 +1650,18 @@ function renderMe(){
 function askRecreate(){
   const b=$('rcBtn');
   if(!b) return;
-  if(b.dataset.armed==='1'){ renderCreate(); return; }
+  if(b.dataset.armed==='1'){
+    /* 重置：清掉存档并重新随机全塔名单，之后才会刷新变化 */
+    clearSave();
+    newGame();
+    SAVE_READY=true;
+    toast('已重置：全塔名单与本局进度都已清空');
+    renderCreate(); return;
+  }
   b.dataset.armed='1';
   b.textContent='⚠ 再点一次 · 清空全部进度';
   b.style.color='var(--bad)'; b.style.borderColor='var(--bad)';
-  toast('重新创建会清空当前角色与全部进度，再点一次确认');
+  toast('重置会清空当前角色与全部进度（名单也会重新随机），再点一次确认');
 }
 function baseAttrOf(c){
   if(c && c.baseAttr) return {per:c.baseAttr.per,spi:c.baseAttr.spi,con:c.baseAttr.con,cha:c.baseAttr.cha};
@@ -1726,17 +1733,31 @@ function renderCreate(edit){
 }
 function rerollName(){ const e=$('inName'); if(e){ e.value=randName(); toast('换了个名字：'+e.value); } }
 function updatePoints(){
+  /* 只统计，不改写输入框内容——否则一边输入一边被夹到 3/20，根本没法改 */
   const ids=['per','spi','con','cha'];
-  let sum=0;
+  let sum=0, over=false;
   ids.forEach(k=>{ const e=$('in_'+k); if(!e) return;
-    let v=parseInt(e.value,10); if(isNaN(v)) v=3; v=clamp(v,3,20); e.value=v; sum+=v; });
+    const raw=String(e.value).trim();
+    let v=raw===''?0:parseInt(raw,10);
+    if(isNaN(v)) v=0;
+    if(v>20) over=true;
+    e.style.borderColor = (v>20||v<3)&&raw!=='' ? 'var(--bad)' : '';
+    sum+=v; });
   const rem=POINT_TOTAL-sum;
   const remEl=$('ptRemain'), hint=$('ptHint'), btn=$('confirmBtn'), bar=$('pointBar');
   if(remEl) remEl.textContent=rem;
-  if(bar) bar.style.borderColor = rem<0 ? 'var(--bad)' : 'var(--line)';
-  if(hint) hint.textContent = rem<0 ? '⚠ 超出预算，请调低属性' : (rem>0 ? `（剩余 ${rem} 点可继续分配）` : '已用尽');
-  if(btn) btn.disabled = rem<0;
-  if(btn) btn.style.opacity = rem<0 ? '.5' : '1';
+  if(bar) bar.style.borderColor = (rem<0||over) ? 'var(--bad)' : 'var(--line)';
+  if(hint) hint.textContent = over ? '⚠ 单项上限 20，请调低' : (rem<0 ? '⚠ 超出预算，请调低属性' : (rem>0 ? `（剩余 ${rem} 点可继续分配）` : '已用尽'));
+  if(btn) btn.disabled = (rem<0 || over);
+  if(btn) btn.style.opacity = (rem<0||over) ? '.5' : '1';
+}
+/* 失焦时才做范围修正，输入过程中不打扰 */
+function clampAttrInput(k){
+  const e=$('in_'+k); if(!e) return;
+  let v=parseInt(e.value,10);
+  if(isNaN(v)) v=3;
+  e.value=clamp(v,3,20);
+  updatePoints();
 }
 function pickIdentity(id, preAttr, preAnimal){
   window._createIdentity=id;
@@ -1744,7 +1765,7 @@ function pickIdentity(id, preAttr, preAnimal){
   const def=window._createDef;
   const inputs=['per','spi','con','cha'].map(k=>`
     <div class="attr-field"><label>${ATTR_NAME[k]}</label>
-    <input type="number" id="in_${k}" min="3" max="20" value="${def[k]}" oninput="updatePoints()"></div>`).join('');
+    <input type="number" id="in_${k}" min="3" max="20" value="${def[k]}" oninput="updatePoints()" onblur="clampAttrInput('${k}')"></div>`).join('');
   $('attrInputs').innerHTML=inputs;
   $('createForm').style.display='block';
   updatePoints();
@@ -1768,16 +1789,20 @@ function buildAllyThreads(){
   CHAT.mentor={
     title:chief.name, color:chief.color, always:true,
     steps:[
-      {npc:()=>`（入册第二天，终端亮起）${chief.name}：${isS?'又去静室待了？我翻了你的过载记录，比上周稳了些。别嫌啰嗦——哨兵的命，半条挂在屏障上。':'新来的。你的共感读数我过了，比同批都干净。向导的手不是用来硬拽的，是引。记住这个，能少走很多弯路。'}`,
+      {npc:[`（入册第二天，终端亮起）`, isS?'又去静室待了？':'新来的。',
+            isS?'我翻了你的过载记录，比上周稳。':'你的共感读数我过了，比同批干净。',
+            isS?'别嫌我啰嗦——哨兵的命，半条挂在屏障上。':'向导的手不是硬拽，是引。'],
        replies:[
-         {label:()=>'（笑）知道啦，'+(isS?'塔长':'首席'),t:'玩笑',reply:'（被叫塔长，他挑了下眉）……叫名字就行。'},
-         {label:'那些痛……会反噬向导吗？',t:'专业',reply:'会。所以才要你学会卸。这比任何检定都重要。'},
-         {label:'我尽量不给你添麻烦',t:'客套',reply:'添麻烦？你活着回来，就是给我省最大的麻烦。'},
+         {label:()=>'（笑）知道啦，'+(isS?'塔长':'首席'),t:'玩笑',reply:['叫名字就行。','塔长是叫给外人听的。']},
+         {label:'那些痛……会反噬向导吗？',t:'专业',reply:['会。','所以才要你学会卸。']},
+         {label:'我尽量不给你添麻烦',t:'客套',reply:['添麻烦？','你活着回来，就是给我省麻烦。']},
+         {label:'您说话怎么总像在念档案',t:'直球',reply:['……习惯了。','行，那我少说两句。']},
        ]},
-      {npc:()=>`（他顿了顿）最近下游不太平。你若接了相关委任，做完来我这儿复个盘。我不在意你多英雄，我在意你走回来。`,
+      {npc:['最近下游不太平。','接了活做完，来我这儿复盘。','我不在意你多英雄，我在意你走回来。'],
        replies:[
-         {label:'明白，会来请教的',t:'专业',reply:'去吧。白塔不缺能打的，缺能让人活着回来的。'},
-         {label:()=>isS?'塔长也怕失去学生吧':'首席也怕失去学生吧',t:'试探',reply:'……（沉默两秒）怕。所以我才站在这儿，没退。'},
+         {label:'明白，会来请教的',t:'专业',reply:['嗯。','别一个人扛。']},
+         {label:()=>isS?'塔长也怕失去学生吧':'首席也怕失去学生吧',t:'试探',reply:['……怕。','所以才站在这儿没退。']},
+         {label:'知道了，您也早点休息',t:'关心',reply:['（顿了下）','……去吧。']},
        ]},
     ],
     close:'首席收了线。他的话像一枚压舱石，沉在你心底。'
@@ -1785,17 +1810,21 @@ function buildAllyThreads(){
   CHAT.friend={
     title:peer.name, color:peer.color, always:true,
     steps:[
-      {npc:()=>`（同期发来一串乱七八糟的表情）${peer.name}：嘿！同期！听说你分到个狠角色当搭档？我那只${peer.animal}今天又跟我闹脾气了哈哈哈。`,
+      {npc:[`（一串乱七八糟的表情）`,`嘿！同期！听说你分到个狠角色当搭档？`,
+            ()=>`我那只${peer.animal}今天又跟我闹脾气了哈哈哈`],
        replies:[
-         {label:'哈哈哈同款精神体',t:'玩笑',reply:'笑死，咱们这届精神体都挺有个性的。'},
-         {label:'惨，我的也难搞',t:'温柔',reply:'难搞才像咱们的嘛。'},
-         {label:'你那只叫什么名？',t:'试探',reply:'没名，它就认我。名字这种东西，清醒了再说。'},
+         {label:'哈哈哈同款精神体',t:'玩笑',reply:['笑死。','咱这届精神体都挺有个性的。']},
+         {label:'惨，我的也难搞',t:'温柔',reply:['难搞才像咱们的嘛。']},
+         {label:'你那只叫什么名？',t:'试探',reply:['没名。','它就认我。']},
+         {label:'那你今天吃饭了吗',t:'关心',reply:['？','……吃了吃了，你怎么突然问这个。']},
        ]},
-      {npc:()=>`说真的，刚觉醒那阵我天天怕自己变怪物。后来带我的老${isS?'哨兵':'向导'}跟我说「你只是太亮了」。这话我送你。`,
+      {npc:[`说真的，刚觉醒那阵我天天怕自己变怪物。`,
+            `后来带我的老${isS?'哨兵':'向导'}跟我说「你只是太亮了」。`,
+            '这话我送你。'],
        replies:[
-         {label:'谢了，记下了',t:'客套',reply:'客气啥，同期要互相罩着。'},
-         {label:'你也是太亮了的人啊',t:'温柔',reply:'……对哦。那咱俩一起亮着吧。'},
-         {label:'有你在，踏实',t:'依赖',reply:'（那边愣了下）……喂，别突然这么肉麻。'},
+         {label:'谢了，记下了',t:'客套',reply:['客气啥。','同期要互相罩着。']},
+         {label:'你也是太亮了的人啊',t:'温柔',reply:['……对哦。','那咱俩一起亮着吧。']},
+         {label:'有你在，踏实',t:'依赖',reply:['喂，别突然这么肉麻。','……不过我记住了。']},
        ]},
     ],
     close:'同期发了个精神体炸毛的表情包，溜了。'
@@ -1880,6 +1909,13 @@ function finalizeCharacter(edit){
 }
 
 /* ============ 白塔任务中心 ============ */
+function scCount(m){ return Object.keys(m.scenes).length; }
+function choiceCount(m){ let n=0; const sc=m.scenes;
+  Object.keys(sc).forEach(function(id){ const s=sc[id]; if(s.render) return;
+    const o=(typeof s.opts==="function")?null:s.opts; if(!o) return;
+    const real=o.filter(function(x){return x&&(x.type==="check"||x.type==="goto"||x.type==="answer");});
+    if(real.length>=2) n++; });
+  return n; }
 function renderTower(){
   G.app='tower'; $('appDot').textContent='任务中心';
   if(G.m){ renderMissionPlayer(); return; }
@@ -1895,7 +1931,7 @@ function renderTower(){
       <div class="m-tags">
         <span class="tag-pill lv">${m.meta.code}</span>
         <span class="tag-pill genre">${m.meta.world}</span>
-        <span class="tag-pill dur">${m.meta.duration}</span>
+        <span class="tag-pill dur">${scCount(m)} 段 · ${choiceCount(m)} 处抉择</span>
         <span class="tag-pill diff">${m.meta.difficulty}</span>
       </div></button>`;
   }).join('');
@@ -1952,6 +1988,7 @@ function renderMissionStats(){
 }
 function mGoTo(id){
   const m=G.m; m.step=id; m.started=true;
+  touchSave();
   const s=m.scenes[id];
   if(!s){ console.error('no scene',id); return; }
   const sceneEl=$('mScene');
@@ -1979,10 +2016,54 @@ function mGoTo(id){
   const old=sceneEl.querySelector('.options'); if(old) old.remove();
   const oldA=sceneEl.querySelector('.answer-box'); if(oldA) oldA.remove();
   if(opts){ const box=document.createElement('div'); box.className='options';
-    opts.forEach(o=>box.appendChild(makeOpt(o))); sceneEl.appendChild(box); }
+    augmentOpts(s, opts).forEach(o=>box.appendChild(makeOpt(o))); sceneEl.appendChild(box); }
   if(s.onEnter) s.onEnter();
   renderMissionStats();
   document.getElementById('mScroll').scrollTop=0;
+}
+/* —— 任务自由度增强：给只有一条路的抉择补上「换个法子」与「自己写」 ——
+   · 单一路径的检定 → 多给一种用别的属性的解法
+   · 任何还有推进空间的场景 → 多给一个自由输入框（写什么都能往下走，只是回响不同） */
+function augmentOpts(s, opts){
+  const list=opts.slice();
+  const isEnd=/end|the_end|_ok$|_neu$|_good$/.test(String(s.title||'')) || list.every(o=>o.type==='goto'&&o.to==='__back');
+  const primary=list.find(o=>o.type==='check') || list.find(o=>o.type==='goto') || null;
+  /* 1) 补一个替代解法 */
+  if(list.length===1 && primary && primary.type==='check'){
+    const a=resolve(primary.attr);
+    const alt=(a==='per')?'spi':(a==='spi')?'con':(a==='con')?'per':'spi';
+    list.push({type:'check', attr:alt, dc:(primary.dc||12)+1, advantage:primary.advantage,
+      overload:primary.overload||0,
+      label:`【${ATTR_NAME[alt]}】换个法子试`, hint:`${ATTR_NAME[alt]} 1d20 vs DC ${(primary.dc||12)+1}`,
+      success:primary.success, fail:primary.fail});
+  }
+  /* 2) 补一个自由输入（用你自己的话/办法） */
+  const hasAnswer=list.some(o=>o.type==='answer');
+  if(!hasAnswer && primary && !isEnd){
+    const toPrimary = primary.to || primary.success || s.title;
+    const toOther = primary.fail || primary.to || toPrimary;
+    list.push({type:'answer', ask:'或者，用你自己的办法来——写下来，故事会顺着你的话走：',
+      placeholder:'例如：「先试着听清那句没说完的话。」',
+      branches:{soothe:K_SOOTHE, force:K_FORCE, flee:K_FLEE, call:K_CALL},
+      route:{soothe:toPrimary, call:toPrimary, default:toPrimary, force:toPrimary, flee:toOther},
+      react:(t,k)=>{
+        if(G.char && C().partnerName) bumpAff(mAff(k));
+        const style={soothe:'你把话说得很轻，事情跟着慢了下来。',
+                     force:'你用了最直接的那种办法，代价立刻就来。',
+                     flee:'你退开半步，先看清了局面再动。',
+                     call:'你把最要紧的那句话说出了口，局面因此松动。',
+                     default:'你按自己的方式做了，路线和预设的不太一样。'}[k]||'你按自己的方式做了。';
+        return `${style}<br><span class="muted">你写的是：「${esc(t||'（你什么也没说，只是动了手）')}」</span><br>${reactLineFor(k)}`;
+      }});
+  }
+  return list;
+}
+function reactLineFor(k){
+  return {soothe:'对方没有立刻回应，但呼吸慢了半拍。',
+          force:'空气紧了一瞬，有人在你身后屏住了气。',
+          flee:'你听见自己的心跳，落后于脚步。',
+          call:'那两个字落在你们之间，谁都没有避开。',
+          default:'结果和你预想的不完全一样，但路还通着。'}[k]||'路还通着。';
 }
 function makeOpt(o){
   if(o.type==='answer'){
@@ -2028,7 +2109,12 @@ async function mCheck(o){
   const mod=resolve(o.mod)||0;
   const overloadPenalty=(c.identity==='sentinel'&&c.overload>=100)?5:0;
   const linkBonus=(attrKey==='con'&&c.linked&&c.identity==='sentinel')?2:0;
-  const totalMod=attrVal+mod-linkBonus-overloadPenalty;
+  /* 属性贡献封顶 + 每掷一次的现场波动：不再是谁都稳过 */
+  const attrPart=Math.round(Math.min(attrVal,12)*0.6);
+  const env=(rnd(9)-4);                                   // ±4 现场环境
+  const rankTier=({S:6,A:4,B:2,C:0,D:0}[c.rank]||0);      // 评级越高，白塔给的活越难
+  const effDC=(o.dc||12)+rankTier+(c.dark?1:0);
+  const totalMod=attrPart+mod-linkBonus-overloadPenalty+env;
   let adv=(typeof o.advantage==='function')?resolve(o.advantage):(o.advantage?true:(o.disadvantage?false:null));
   if(c.identity==='sentinel'&&c.overload>=100) adv=false;
   const wrap=$('mDice'); wrap.innerHTML=''; $('mVerdict').textContent=''; $('mCheckInfo').textContent='';
@@ -2036,15 +2122,16 @@ async function mCheck(o){
   for(let i=0;i<n;i++){ const d=document.createElement('div'); d.className='die'; d.innerHTML=`<span class="tag">${adv?'2d20':'1d20'}</span><span class="num">?</span>`; wrap.appendChild(d); dice.push(d); }
   const rolls=[]; for(let i=0;i<n;i++) rolls.push(1+rnd(20));
   let chosen; if(adv===true) chosen=Math.max(...rolls); else if(adv===false) chosen=Math.min(...rolls); else chosen=rolls[0];
-  const total=chosen+totalMod; const success=total>=o.dc;
-  await Promise.all(dice.map((d,i)=>animateDie(d,20,rolls[i],(n===1&&rolls[i]===20)?'crit':(n===1&&rolls[i]===1?'fail':null))));
-  let info=`【${ATTR_NAME[attrKey]} ${attrVal}${mod?(' '+(mod>0?'+':'')+mod):''}${linkBonus?(' 链接+'+linkBonus):''}${overloadPenalty?(' 过载-'+overloadPenalty):''}】 `;
-  if(n===2) info+=`2d20 取${adv?'高':'低'}=${chosen} → 总计 <b>${total}</b> vs DC ${o.dc}`;
-  else info+=`1d20=${chosen} → 总计 <b>${total}</b> vs DC ${o.dc}`;
+  const total=chosen+totalMod;
+  const critWin=(chosen===20), critLose=(chosen===1);
+  const success = critWin ? true : (critLose ? false : total>=effDC);
+  await Promise.all(dice.map((d,i)=>animateDie(d,20,rolls[i],(chosen===20)?'crit':(chosen===1?'fail':null))));
+  let info=`【${ATTR_NAME[attrKey]} ${attrVal}→+${attrPart}${mod?(' 修正'+(mod>0?'+':'')+mod):''}${linkBonus?(' 链接+'+linkBonus):''}${overloadPenalty?(' 过载-'+overloadPenalty):''} 现场${env>=0?'+':''}${env}】 `;
+  info += (n===2?`2d20 取${adv?'高':'低'}=${chosen}`:`1d20=${chosen}`) + ` → 总计 <b>${total}</b> vs DC ${effDC}${rankTier?`（基础 ${o.dc} + 评级 ${rankTier}）`:''}${critLose?' · 大失败':(critWin?' · 大成功':'')}`;
   $('mCheckInfo').innerHTML=info;
   $('mVerdict').textContent=success?'✦ 成功':'✕ 失败';
   $('mVerdict').className='verdict '+(success?'ok':'no');
-  addMLog(`🎲 ${ATTR_NAME[attrKey]} 检定：掷${n>1?(adv?'2d20取高':'2d20取低'):'1d20'} 得 ${chosen}，总计 ${total} / DC ${o.dc} → ${success?'<span class="win">成功</span>':'<span class="lose">失败</span>'}`);
+  addMLog(`🎲 ${ATTR_NAME[attrKey]} 检定：掷${n>1?(adv?'2d20取高':'2d20取低'):'1d20'} 得 ${chosen}，总计 ${total} / DC ${effDC} → ${success?'<span class="win">成功</span>':'<span class="lose">失败</span>'}${critLose?'（大失败）':(critWin?'（大成功）':'')}`);
   if(o.overload) mOverload(resolve(o.overload));
   setTimeout(()=>{ mGoTo(success?o.success:o.fail); },1000);
 }
@@ -2285,6 +2372,7 @@ function applyAff(name, d){
   if(name===C().partnerName && before<55 && after>=55 && G.unread.romance==null){
     G.unread.romance=1; toast('💞 心动支线已解锁，去「消息」看看'); refreshNavBadges();
   }
+  touchSave();
   return after-before;
 }
 /* 带口吻的判定：有口吻就交给性格，没有就用兜底数值 */
@@ -2354,7 +2442,7 @@ function smsRows(){
         <div class="t-name">${esc(s.from)}</div>
         <div class="t-last">${esc(last).slice(0,38)}</div>
       </div>${badge}</div>`;
-    return swipeWrap(s.id, inner, 'sms');
+    return menuRow(s.id, inner, 'sms');
   }).join('');
 }
 /* 消息 / 短信 分段条（和电话·通讯录同一套） */
@@ -2375,52 +2463,46 @@ function renderSmsList(){
       ${segMsgSms('sms')}
       <div class="stat-title" style="font-weight:700;color:var(--dim);font-size:13px;margin:2px 0 8px;">短信与通知（${G.sms.length}${missed?' · 未读 '+missed:''}）</div>
       ${smsRows()}
-      <div class="muted" style="font-size:11px;text-align:center;margin-top:14px;">向右滑动一条可删除</div>
+      <div class="muted" style="font-size:11px;text-align:center;margin-top:14px;">长按（手机）或右键（电脑）一条，可删除或标记已读</div>
     </div>`;
   renderTabbar();
 }
 /* 右滑时不要误触打开：拖动过就不算点击 */
-function openSMSIf(id){ if(SWIPE_DRAGGED) return; openSMS(id); }
-function openThreadIf(k){ if(SWIPE_DRAGGED) return; openThread(k); }
-/* ============ 右滑删除（消息 / 短信）============
-   触摸或鼠标横拖都支持：右滑露出「删除」，左滑或点别处收回。 */
-let SWIPE=null, SWIPE_DRAGGED=false;
-const SWIPE_W=78;
-function swipeWrap(id, inner, kind){
+function openSMSIf(id){ if(MENU_MARK) return; openSMS(id); }
+function openThreadIf(k){ if(MENU_MARK) return; openThread(k); }
+/* ============ 行内菜单（长按 / 右键删除，不再做右滑）============ */
+let PRESS_TIMER=null, MENU_OPEN=false, MENU_MARK=false;
+/* 把一行包成「可长按/右键出菜单」的行；inner 里自己带 onclick */
+function menuRow(id, inner, kind){
   const k=(kind||'').replace(/'/g,'');
-  return `<div class="swipe-row" data-kind="${k}" data-id="${id}"
-      ontouchstart="swipeStart(event);pressStart(event,'${k}','${id}')" ontouchmove="swipeMove(event);pressCancel()"
-      ontouchend="swipeEnd(event);pressEnd()" ontouchcancel="swipeEnd(event);pressCancel()"
-      onmousedown="swipeStart(event)" onmousemove="swipeMove(event)" onmouseup="swipeEnd(event)" onmouseleave="swipeEnd(event)"
+  return `<div class="menu-row" data-kind="${k}" data-id="${id}"
+      ontouchstart="pressStart(event,'${k}','${id}')" ontouchmove="pressCancel()"
+      ontouchend="pressEnd()" ontouchcancel="pressCancel()"
       oncontextmenu="event.preventDefault();showRowMenu(event,'${k}','${id}')">
-    <div class="swipe-del" onclick="event.stopPropagation();swipeDelete('${k}','${id}')">🗑<span>删除</span></div>
-    <div class="swipe-body">${inner}</div>
-  </div>`;
+    ${inner}</div>`;
 }
-/* ——— 长按 / 右键：弹出删除菜单 ——— */
-let PRESS_TIMER=null, MENU_OPEN=false;
 function pressStart(ev, kind, id){
   pressCancel();
   const t=(ev.touches&&ev.touches[0])?ev.touches[0]:ev;
   const pt={clientX:t.clientX, clientY:t.clientY};
   PRESS_TIMER=setTimeout(function(){
     PRESS_TIMER=null;
-    SWIPE_DRAGGED=true;                     // 长按后不要当成点击
+    MENU_MARK=true;
     showRowMenu(pt, kind, id);
     try{ if(navigator.vibrate) navigator.vibrate(12); }catch(e){}
   }, 460);
 }
 function pressCancel(){ if(PRESS_TIMER){ clearTimeout(PRESS_TIMER); PRESS_TIMER=null; } }
-function pressEnd(){ pressCancel(); setTimeout(function(){ if(!MENU_OPEN) SWIPE_DRAGGED=false; }, 60); }
+function pressEnd(){ pressCancel(); setTimeout(function(){ if(!MENU_OPEN) MENU_MARK=false; }, 60); }
 function closeRowMenu(){
   const m=document.getElementById('rowMenu'); if(m&&m.parentNode) m.parentNode.removeChild(m);
   MENU_OPEN=false;
-  setTimeout(function(){ SWIPE_DRAGGED=false; }, 60);
+  setTimeout(function(){ MENU_MARK=false; }, 60);
 }
 function showRowMenu(ev, kind, id){
   closeRowMenu();
   const x=(ev.clientX!=null?ev.clientX:0), y=(ev.clientY!=null?ev.clientY:0);
-  const W=168, H=kind==='sms'?126:92;
+  const W=172, H=kind==='sms'?128:96;
   const vw=(window.innerWidth||380), vh=(window.innerHeight||700);
   const left=Math.max(8, Math.min(x-40, vw-W-8));
   const top=Math.max(8, Math.min(y+6, vh-H-8));
@@ -2435,7 +2517,7 @@ function showRowMenu(ev, kind, id){
   items+=`<div class="rm-item" onclick="closeRowMenu()">✕ 取消</div>`;
   m.innerHTML=items;
   document.body.appendChild(m);
-  MENU_OPEN=true; SWIPE_DRAGGED=true;      // 菜单开着时不要顺手打开详情
+  MENU_OPEN=true; MENU_MARK=true;      // 菜单开着时不要顺手打开详情
   setTimeout(function(){
     document.addEventListener('click', closeRowMenu, {once:true});
     document.addEventListener('touchstart', function h(e){
@@ -2447,50 +2529,16 @@ function showRowMenu(ev, kind, id){
 function rowMenuAction(kind, id, act){
   const s=(G.sms||[]).find(function(o){return o.id===id;});
   closeRowMenu();
-  if(act==='del'){ swipeDelete(kind, id); return; }
+  if(act==='del'){ rowDelete(kind, id); return; }
   if(kind==='sms' && s && act==='read'){ s.unread=0; toast('已标为已读'); renderSmsList(); return; }
   if(kind==='sms' && s && act==='unread'){ s.unread=1; toast('已标为未读'); renderSmsList(); return; }
 }
-function swipeStart(ev){
-  const row=ev.currentTarget;
-  if(ev.type==='mousedown' && ev.button!==0) return;
-  const x=(ev.touches&&ev.touches[0]?ev.touches[0].clientX:ev.clientX);
-  swipeCloseAll(row);
-  SWIPE={row, x0:x, dx:0, open:row.classList.contains('open')};
-}
-function swipeMove(ev){
-  if(!SWIPE) return;
-  const x=(ev.touches&&ev.touches[0]?ev.touches[0].clientX:ev.clientX);
-  let dx=x-SWIPE.x0+(SWIPE.open?SWIPE_W:0);
-  dx=Math.max(-6, Math.min(SWIPE_W, dx));
-  SWIPE.dx=dx;
-  if(Math.abs(dx)>6) SWIPE_DRAGGED=true;
-  const body=SWIPE.row.querySelector('.swipe-body');
-  if(body) body.style.transform='translateX('+dx+'px)';
-  if(ev.cancelable && ev.type==='touchmove') ev.preventDefault();
-}
-function swipeEnd(){
-  if(!SWIPE) return;
-  const row=SWIPE.row, body=row.querySelector('.swipe-body');
-  const open=SWIPE.dx>SWIPE_W*0.45;
-  row.classList.toggle('open', open);
-  if(body) body.style.transform='translateX('+(open?SWIPE_W:0)+'px)';
-  SWIPE=null;
-  setTimeout(function(){ SWIPE_DRAGGED=false; }, 60);
-}
-function swipeCloseAll(except){
-  document.querySelectorAll('.swipe-row.open').forEach(function(r){
-    if(r===except) return;
-    r.classList.remove('open');
-    const b=r.querySelector('.swipe-body'); if(b) b.style.transform='translateX(0)';
-  });
-}
-function swipeDelete(kind, id){
-  swipeCloseAll();
+function rowDelete(kind, id){
   if(kind==='sms'){
-    const i=G.sms.findIndex(function(x){return x.id===id;}); if(i<0) return;
+    const i=(G.sms||[]).findIndex(function(x){return x.id===id;}); if(i<0) return;
     const from=G.sms[i].from; G.sms.splice(i,1);
     toast('已删除：'+from);
+    touchSave();
     if(G.msgTab==='sms') renderSmsList(); else renderChatList();
     return;
   }
@@ -2498,9 +2546,11 @@ function swipeDelete(kind, id){
     const k=id;
     G.threads=(G.threads||[]).filter(function(x){return x!==k;});
     delete G.unread[k]; delete G.chatProgress[k];
+    touchSave();
     toast('已删除该会话'); renderChatList(); return;
   }
 }
+function swipeDelete(kind, id){ rowDelete(kind, id); }   // 兼容旧调用
 function threadDeleteButton(kind, id){
   return `<button class="btn" style="margin-top:10px;" onclick="swipeDelete('${kind}','${id}')">🗑 删除这条会话</button>`;
 }
@@ -2523,6 +2573,7 @@ function smsReply(id, i){
   s.lines.push({who:'me', t:o.label});
   if(o.r) s.lines.push({who:'them', t:o.r});
   s.closed=true;
+  touchSave();
   openSMS(id);
   if(o.label==='举报'||o.label==='拉黑') toast('已提交：'+s.from);
 }
@@ -2574,17 +2625,18 @@ function genericThread(name){
   return {
     title:name, color:p.color||'#26334f', always:true,
     steps:[
-      {npc:`（你给 ${name} 发了条消息）在吗？刚忙完，想找你说两句。`,
+      {npc:['在吗？','刚忙完。'],
        replies:[
-         {label:'刚好有空，聊',t:'温柔',reply:'那就好。最近任务紧，能有人说说话不容易。'},
-         {label:'（发个表情包）',t:'玩笑',reply:'哈哈，你这人，倒是会活跃气氛。'},
-         {label:'怎么，有事？',t:'客套',reply:'没什么大事，就是想确认你那边还稳。'},
+         {label:'在，刚好有空',t:'温柔',reply:['那就好。','最近事多，能说两句不容易。']},
+         {label:'（发个表情包）',t:'玩笑',reply:['哈哈哈你这人。']},
+         {label:'有事？',t:'客套',reply:['没大事。','就是确认你那边还稳。']},
+         {label:'刚忙完就找我，想我了吧',t:'撩',reply:['……嘴别这么欠。','（但也没否认）']},
        ]},
-      {npc:`说起来，你最近状态怎么样？我这边 ${animal} 倒是比上个月安分了点。`,
+      {npc:[`说起来，你最近怎么样？`,`我这边${animal}安分点了。`],
        replies:[
-         {label:'挺好的，顺多了',t:'直球',reply:'那就好。白塔就怕咱们这批人出事。'},
-         {label:'还行，偶尔闹脾气',t:'示弱',reply:'正常，精神体都这样，熟了就好。'},
-         {label:'你呢？',t:'关心',reply:`我嘛，老样子。当${idWord}的日子，无非是撑着。有你这句关心，倒是松了点。`},
+         {label:'挺好的，顺多了',t:'直球',reply:['那就好。']},
+         {label:'还行，偶尔闹脾气',t:'示弱',reply:['正常。','精神体都这样，熟了就好。']},
+         {label:'你呢？',t:'关心',reply:[`老样子。`,`有你这句关心，倒松了点。`]},
        ]},
     ],
     close:'你们又聊了几句，互道保重，各自回了岗位。'
@@ -2660,7 +2712,7 @@ function renderChatList(){
         <div class="t-last">${esc(sub)}</div>
       </div>
       ${unread}</div>`;
-    return swipeWrap(k, inner, 'thread');
+    return menuRow(k, inner, 'thread');
   }).join('');
   $('screen').innerHTML = `
     ${appBar('消息','')}
@@ -2669,7 +2721,7 @@ function renderChatList(){
       ${extras?`<div class="stat-title" style="font-weight:700;color:var(--dim);font-size:13px;margin:2px 0 8px;">最近联系（${extraKeys.length}）</div>${extras}`:''}
       <div class="stat-title" style="font-weight:700;color:var(--dim);font-size:13px;margin:2px 0 8px;">固定会话</div>
       ${items}
-      <div class="muted" style="font-size:11px;text-align:center;margin-top:14px;">向右滑动一条消息可删除它 · 通讯录在「电话」里</div>
+      <div class="muted" style="font-size:11px;text-align:center;margin-top:14px;">长按 / 右键一条可删除 · 通讯录在「电话」里</div>
     </div>`;
   renderTabbar();
 }
@@ -2687,11 +2739,16 @@ function openThread(k){
   const affName = chatAffName(k);
   const aff = affName ? (G.affinity[affName]||0) : 0;
   let bodyHtml='';
-  // 已过的步骤显示为气泡
+  // 已过的步骤显示为气泡（含玩家说过的话与对方的回应）
+  const myLog=(G.chatLog&&G.chatLog[k])||[];
   for(let i=0;i<prog;i++){
     const st=t.steps[i];
     bodyHtml+=`<div class="bubble them">${resolve(st.npc)}</div>`;
-    if(st._reply) bodyHtml+=`<div class="bubble me">${esc(st._reply)}</div>`;
+    const lg=myLog[i]||null;
+    const meTxt=lg?lg.me:(st._reply||'');
+    if(meTxt) bodyHtml+=`<div class="bubble me">${esc(meTxt)}</div>`;
+    const themArr=lg&&Array.isArray(lg.them)?lg.them:[];
+    themArr.forEach(x=>{ bodyHtml+=`<div class="bubble them">${esc(x)}</div>`; });
   }
   let replyHtml='';
   if(prog<t.steps.length){
@@ -2715,40 +2772,76 @@ function openThread(k){
     ${(k.indexOf('gen:')===0)?`<div style="padding:0 14px 18px;">${threadDeleteButton('thread', k)}</div>`:''}`;
   const cb=$('chatBody'); cb.scrollTop=cb.scrollHeight;
 }
+/* ——— 打字感：先冒「对方正在输入…」，再按随机延迟逐条发出 ——— */
+function typingBubble(cb){
+  const d=document.createElement('div');
+  d.className='bubble them typing';
+  d.innerHTML='<span class="tdots"><i></i><i></i><i></i></span>对方正在输入…';
+  cb.appendChild(d); cb.scrollTop=cb.scrollHeight;
+  return d;
+}
+function sendThemLines(cb, lines, done){
+  const arr=(Array.isArray(lines)?lines:[lines]).map(x=>resolve(x)).filter(x=>x!=null&&String(x).trim()!=='');
+  let i=0;
+  const step=()=>{
+    if(i>=arr.length){ if(done) done(); return; }
+    const txt=String(arr[i++]);
+    const ind=typingBubble(cb);
+    const wait=Math.min(3600, 420+txt.length*48+Math.random()*900);
+    setTimeout(()=>{
+      if(ind.parentNode) ind.parentNode.removeChild(ind);
+      const d=document.createElement('div'); d.className='bubble them'; d.textContent=txt;
+      cb.appendChild(d); cb.scrollTop=cb.scrollHeight;
+      setTimeout(step, 160+Math.random()*340);
+    }, wait);
+  };
+  step();
+}
+function chatLogOf(k){ if(!G.chatLog) G.chatLog={}; if(!G.chatLog[k]) G.chatLog[k]=[]; return G.chatLog[k]; }
+function afterFlow(k){
+  if(G.openThread!==k){ G.unread[k]=(G.unread[k]||0)+1; refreshNavBadges(); }
+  touchSave();
+}
+function refreshAffBar(){
+  const k=G.openThread; if(!k) return;
+  const an=chatAffName(k); const aff=an?(G.affinity[an]||0):0;
+  const body=$('chatBody'); if(!body) return;
+  const bar=body.parentNode.querySelector('.bar.mt > i'); if(bar) bar.style.width=aff+'%';
+  const sp=body.parentNode.querySelector('.affinity span:last-child'); if(sp) sp.textContent=aff+'/100';
+}
 function sendReply(k, idx){
   const t=getThread(k); const prog=G.chatProgress[k]||0;
   if(prog>=t.steps.length) return;
   const st=t.steps[prog]; const r=st.replies[idx];
-  // 记录我的回复
-  st._reply = resolve(r.reply) || resolve(r.label);
-  // 好感：选项不带任何数值，加减完全由对方这一局的性格判定
+  const myLabel=resolve(r.label);                                   // 玩家说的话
+  const themLines=(r.reply!=null)?(Array.isArray(r.reply)?r.reply:[r.reply]):[];
+  st._reply=myLabel;
+  /* 好感：选项不带数值，加减由对方性格判定 */
   const an0=chatAffName(k);
   if(an0) applyToneAff(an0, r.t||null, (r.aff!=null?r.aff:(r.delta||0)));
   G.chatProgress[k]=prog+1;
-  // 若该步 lock 为 close/date 且到了末步处理
+  /* 记进会话上下文（存档一起带走） */
+  chatLogOf(k)[prog]={ me:myLabel, them:themLines.map(x=>String(resolve(x))) };
   const cb=$('chatBody');
-  const meD=document.createElement('div'); meD.className='bubble me'; meD.textContent=st._reply; cb.appendChild(meD);
-  // 移除旧回复按钮
+  const meD=document.createElement('div'); meD.className='bubble me'; meD.textContent=myLabel;
+  cb.appendChild(meD); cb.scrollTop=cb.scrollHeight;
   $('chatReplies').innerHTML='';
+  touchSave();
   const np=G.chatProgress[k];
-  if(np<t.steps.length){
-    const nst=t.steps[np];
-    const them=document.createElement('div'); them.className='bubble them'; them.textContent=resolve(nst.npc);
-    setTimeout(()=>{ cb.appendChild(them); cb.scrollTop=cb.scrollHeight; renderReplies(k);
-      if(G.openThread!==k){ G.unread[k]=(G.unread[k]||0)+1; refreshNavBadges(); } }, 500);
-  } else {
-    const sys=document.createElement('div'); sys.className='bubble sys'; sys.textContent=t.close||'对话已结束';
-    setTimeout(()=>{ cb.appendChild(sys); if(t.date){ const d2=document.createElement('div'); d2.className='bubble sys'; d2.textContent=t.date; cb.appendChild(d2);} cb.scrollTop=cb.scrollHeight; renderReplies(k);
-      if(G.openThread!==k){ G.unread[k]=(G.unread[k]||0)+1; refreshNavBadges(); } }, 500);
-    if(k==='romance'){ toast('💞 心动支线已开启'); G.unread[k]=0; }
-  }
-  // 更新好感条（原地刷新，不跳页）
-  const an=chatAffName(k);
-  const aff=an?(G.affinity[an]||0):0;
-  const bar=$('chatBody').parentNode.querySelector('.bar.mt > i');
-  if(bar) bar.style.width=aff+'%';
-  const affSpan=$('chatBody').parentNode.querySelector('.affinity span:last-child');
-  if(affSpan) affSpan.textContent=aff+'/100';
+  const afterThem=()=>{
+    if(np<t.steps.length){
+      const nst=t.steps[np];
+      sendThemLines(cb, [nst.npc], ()=>{ renderReplies(k); afterFlow(k); });
+    } else {
+      const sys=document.createElement('div'); sys.className='bubble sys'; sys.textContent=t.close||'对话已结束';
+      cb.appendChild(sys);
+      if(t.date){ const d2=document.createElement('div'); d2.className='bubble sys'; d2.textContent=t.date; cb.appendChild(d2); }
+      cb.scrollTop=cb.scrollHeight; renderReplies(k); afterFlow(k);
+      if(k==='romance'){ toast('💞 心动支线已开启'); G.unread[k]=0; }
+    }
+  };
+  if(themLines.length) sendThemLines(cb, themLines, afterThem); else afterThem();
+  refreshAffBar();
 }
 function renderReplies(k){
   const t=getThread(k); const prog=G.chatProgress[k]||0;
@@ -2774,12 +2867,14 @@ function sendFree(k){
   let key='default';
   for(const c in cats){ if(cats[c].some(w=>text.includes(w))){ key=c; break; } }
   const replyMap={
-    soothe:'（对方轻笑）……你这话，比任何疏导都管用。',
-    force:'（对方顿了顿）狠了点，但我听懂了。',
-    flee:'（对方）好，那我先不动，等你想清楚。',
-    call:'（对方）嗯，我记得你。一直都记得。',
-    default:'（对方）……我记下了。'
+    soothe:[['……你这话，比疏导还管用。'],['（笑）','好，听你的。'],['嗯。','我这会儿松了点。']],
+    force:[['狠了点。','但我听懂了。'],['……行。'],['别这样。','不过我记下了。']],
+    flee:[['行。','那我不动，等你想清楚。'],['嗯，','慢慢来。']],
+    call:[['嗯。','我记得你。'],['……一直在。'],['知道了。','你也是。']],
+    default:[['……嗯。'],['我记下了。'],['哦。','然后呢？'],['（笑）','你这人。']]
   };
+  const pickReply=()=>{ const v=replyMap[key]||replyMap.default; return pick(v); };
+  const themLines=pickReply();
   const an=chatAffName(k);
   const toneMap={soothe:'温柔', force:'强硬', flee:'示弱', call:'直球'};
   const tone=toneMap[key]||null;
@@ -2787,8 +2882,11 @@ function sendFree(k){
     const d = tone ? clamp(affOf(an,tone),-5,5) : (1+rnd(2));
     applyAff(an, d);
   }
-  setTimeout(()=>{ const d=document.createElement('div'); d.className='bubble them'; d.textContent=replyMap[key]; cb.appendChild(d); cb.scrollTop=cb.scrollHeight; }, 500);
+  chatLogOf(k).push({me:text, them:themLines.slice()});
+  sendThemLines(cb, themLines, ()=>{ touchSave(); });
   inp.value='';
+  touchSave();
+  refreshAffBar();
 }
 
 /* ============ 通讯录 ============ */
@@ -2911,7 +3009,7 @@ function contactDetail(name){
   const relHtml = relCard(name);
   const bondApply = bondable ? `<div class="card" style="background:linear-gradient(180deg,rgba(255,107,138,.06),rgba(90,209,255,.03));border-left:3px solid var(--bad);"><div class="muted" style="font-size:12px;line-height:1.7;">你们的精神图景契合度达 <b style="color:var(--gold)">${calcMatch(C().attr,p)}%</b>，好感也已突破临界点。若双方愿意，可申请结合，成为彼此的专属哨向。</div><button class="btn primary" style="margin-top:10px;" onclick="doMatch('${name}')">💗 申请结合</button></div>` : '';
   $('screen').innerHTML=`
-    ${appBar(p.name,'联系人', 'renderContacts()')}
+    ${appBar(p.name, voiceToggleHTML(), 'renderContacts()')}
     <div class="scroll">
       <div class="card" style="text-align:center;">
         <div class="av" style="background:${p.color||'#26334f'};width:64px;height:64px;font-size:30px;margin:0 auto 10px;">${p.name[0]}</div>
@@ -4341,10 +4439,12 @@ function genPhotoSVG(sceneId, person, opts){
     <ellipse cx="${lightX.toFixed(0)}" cy="${lightY.toFixed(0)}" rx="${warm?150:190}" ry="${warm?130:170}" fill="url(#glow${uid})" opacity="${warm?0.5:0.32}"/>
     <g filter="url(#blurL)">${far}</g>
     <g filter="url(#blurM)">${mid}</g>
+    ${dailyProps(sc.id)}
     ${ground}
     ${near}
     <g>${subject}</g>
     <rect width="360" height="480" fill="url(#vig${uid})"/>
+    ${techHud()}
     <rect width="360" height="480" filter="url(#film${uid})" opacity="${(0.10+Math.random()*0.05).toFixed(2)}"/>
     <rect width="360" height="480" fill="${warm?'#ffb066':'#6fd8ff'}" opacity="0.05"/>
     <rect x="0" y="404" width="360" height="76" fill="#04070d" opacity="0.45"/>
@@ -4353,7 +4453,79 @@ function genPhotoSVG(sceneId, person, opts){
   </svg>`;
 }
 
-/* ——— AI 立绘：给每位 NPC 生成一张半身角色立绘（本地程序化，不联网） ——— */
+/* 日常感 / 科技感的补充道具：让空镜看起来像真地方，而不是抽象背景 */
+function dailyProps(id){
+  const A={
+    tower:`<g opacity="0.95">
+      <rect x="0" y="392" width="360" height="10" fill="#0d1626" opacity="0.9"/>
+      <rect x="40" y="352" width="16" height="44" rx="4" fill="#131f33"/><rect x="120" y="352" width="16" height="44" rx="4" fill="#131f33"/>
+      <rect x="40" y="352" width="96" height="5" rx="2" fill="#5ad1ff" opacity="0.35"/>
+      <rect x="250" y="300" width="86" height="52" rx="4" fill="#0e1828" opacity="0.95"/>
+      <rect x="256" y="306" width="74" height="6" rx="3" fill="#5ad1ff" opacity="0.5"/>
+      <rect x="256" y="318" width="52" height="4" rx="2" fill="#8ab4d8" opacity="0.35"/>
+      <circle cx="330" cy="330" r="3" fill="#5ef2a0" opacity="0.9"/></g>`,
+    train:`<g opacity="0.95">
+      <rect x="0" y="404" width="360" height="76" fill="#1a1208" opacity="0.85"/>
+      <rect x="24" y="356" width="140" height="10" rx="4" fill="#2a1a0c"/>
+      <rect x="28" y="300" width="12" height="60" fill="#2a1a0c"/><rect x="148" y="300" width="12" height="60" fill="#2a1a0c"/>
+      <rect x="250" y="286" width="96" height="58" rx="5" fill="#101a22" opacity="0.95"/>
+      <rect x="256" y="292" width="40" height="8" rx="3" fill="#ffb066" opacity="0.55"/>
+      <rect x="256" y="306" width="84" height="4" rx="2" fill="#8ab4d8" opacity="0.3"/>
+      <rect x="256" y="316" width="60" height="4" rx="2" fill="#8ab4d8" opacity="0.22"/></g>`,
+    quiet:`<g opacity="0.95">
+      <rect x="0" y="${316}" width="360" height="164" fill="#0e1319" opacity="0.9"/>
+      ${Array.from({length:9},(_,i)=>`<rect x="${8+i*40}" y="120" width="32" height="120" rx="6" fill="#1a222c" opacity="0.5" stroke="#28323e" stroke-width="1"/>`).join('')}
+      <rect x="112" y="356" width="136" height="16" rx="8" fill="#1e2630"/>
+      <rect x="126" y="372" width="10" height="42" fill="#161d25"/><rect x="224" y="372" width="10" height="42" fill="#161d25"/>
+      <ellipse cx="180" cy="292" rx="46" ry="12" fill="#cfe6ff" opacity="0.10" filter="url(#blurL)"/></g>`,
+    roof:`<g opacity="0.95">
+      <rect x="286" y="268" width="52" height="34" rx="4" fill="#0b1220"/>
+      <circle cx="312" cy="285" r="12" fill="none" stroke="#9db4ff" stroke-opacity="0.35" stroke-width="3"/>
+      <circle cx="312" cy="285" r="4" fill="#9db4ff" opacity="0.5"/>
+      <path d="M60,300 L60,236 M44,246 L76,246 M52,256 L68,256" stroke="#9db4ff" stroke-opacity="0.25" stroke-width="2"/>
+      <rect x="0" y="386" width="360" height="6" rx="3" fill="#9db4ff" opacity="0.3"/>
+      ${Array.from({length:9},(_,i)=>`<circle cx="${24+i*40}" cy="${356+((i%3)*8)}" r="2.4" fill="#ffd479" opacity="0.5"/>`).join('')}</g>`,
+    dorm:`<g opacity="0.95">
+      <rect x="0" y="392" width="360" height="88" fill="#120c05" opacity="0.9"/>
+      <rect x="44" y="330" width="200" height="18" rx="5" fill="#2a2010"/>
+      <rect x="52" y="348" width="10" height="46" fill="#1c150b"/><rect x="226" y="348" width="10" height="46" fill="#1c150b"/>
+      <rect x="72" y="312" width="60" height="20" rx="4" fill="#33260f" opacity="0.9"/>
+      <circle cx="272" cy="330" r="16" fill="#ffd479" opacity="0.22" filter="url(#blurM)"/>
+      <rect x="264" y="336" width="16" height="10" rx="3" fill="#3a2c14"/></g>`,
+    night:`<g opacity="0.95">
+      <rect x="0" y="330" width="360" height="150" fill="#12060a" opacity="0.86"/>
+      <path d="M18,300 L18,352 M18,300 L112,300" stroke="#ff8f6b" stroke-opacity="0.25" stroke-width="3"/>
+      ${Array.from({length:16},(_,i)=>`<circle cx="${-20+i*26}" cy="${268+Math.sin(i)*6}" r="3" fill="#ffd479" opacity="${0.35+((i%3)*0.2)}"/>`).join('')}
+      <rect x="150" y="336" width="16" height="4" rx="2" fill="#8a4a30" opacity="0.8"/>
+      <rect x="146" y="340" width="24" height="10" rx="3" fill="#5a2a1c" opacity="0.8"/>
+      <rect x="196" y="342" width="22" height="8" rx="3" fill="#7a3a26" opacity="0.7"/>
+      ${Array.from({length:5},()=>`<circle cx="${(60+Math.random()*240).toFixed(0)}" cy="${(236+Math.random()*40).toFixed(0)}" r="${(8+Math.random()*14).toFixed(0)}" fill="#ffb066" opacity="0.10" filter="url(#blurM)"/>`).join('')}</g>`,
+    spirit:`<g opacity="0.95">
+      <rect x="0" y="392" width="360" height="88" fill="#0c0818" opacity="0.9"/>
+      <ellipse cx="180" cy="404" rx="120" ry="24" fill="#b78bff" opacity="0.10" filter="url(#blurM)"/>
+      <rect x="36" y="340" width="60" height="52" rx="6" fill="#1a1430" opacity="0.9"/>
+      <circle cx="300" cy="330" r="20" fill="#b78bff" opacity="0.14" filter="url(#blurM)"/></g>`,
+    field:`<g opacity="0.95">
+      <rect x="26" y="286" width="70" height="42" rx="4" fill="#0b2320" opacity="0.95"/>
+      <rect x="32" y="292" width="44" height="6" rx="3" fill="#6ee7b7" opacity="0.5"/>
+      <rect x="32" y="304" width="30" height="4" rx="2" fill="#dff" opacity="0.25"/>
+      ${Array.from({length:26},()=>`<rect x="${(Math.random()*360).toFixed(0)}" y="${(Math.random()*430).toFixed(0)}" width="1" height="${(10+Math.random()*26).toFixed(0)}" fill="#ddffff" opacity="0.12"/>`).join('')}
+      <ellipse cx="180" cy="424" rx="150" ry="18" fill="#bff5dd" opacity="0.10" filter="url(#blurM)"/></g>`,
+  };
+  return A[id]||'';
+}
+/* 科技感 HUD：细微扫描线 + 四角标记（拍照时有取景器感） */
+function techHud(){
+  return `<g opacity="0.5">
+    ${Array.from({length:24},(_,i)=>`<rect x="0" y="${(i*20).toFixed(0)}" width="360" height="1" fill="#8ff0ff" opacity="0.05"/>`).join('')}
+    <path d="M14,20 L14,34 M14,20 L28,20" stroke="#8ff0ff" stroke-opacity="0.55" stroke-width="2" fill="none"/>
+    <path d="M346,20 L346,34 M346,20 L332,20" stroke="#8ff0ff" stroke-opacity="0.55" stroke-width="2" fill="none"/>
+    <path d="M14,392 L14,378 M14,392 L28,392" stroke="#8ff0ff" stroke-opacity="0.55" stroke-width="2" fill="none"/>
+    <path d="M346,392 L346,378 M346,392 L332,392" stroke="#8ff0ff" stroke-opacity="0.55" stroke-width="2" fill="none"/>
+    <circle cx="326" cy="30" r="3" fill="#5ef2a0"/>
+  </g>`;
+}
+
 function genPortraitSVG(person, opts){
   const p=person||{};
   const o=opts||{};
@@ -4419,6 +4591,10 @@ function genPortraitSVG(person, opts){
       <linearGradient id="pskin${uid}" x1="0.2" y1="0" x2="0.9" y2="1">
         <stop offset="0%" stop-color="${shade(skin,0.10)}"/><stop offset="70%" stop-color="${skin}"/><stop offset="100%" stop-color="${skinD}"/>
       </linearGradient>
+      <radialGradient id="iris${uid}" cx="50%" cy="35%" r="65%">
+        <stop offset="0%" stop-color="${shade(eyeC,0.45)}"/><stop offset="55%" stop-color="${eyeC}"/>
+        <stop offset="100%" stop-color="${shade(eyeC,-0.5)}"/>
+      </radialGradient>
       <radialGradient id="pglow${uid}" cx="35%" cy="26%" r="62%">
         <stop offset="0%" stop-color="${eyeC}" stop-opacity="0.34"/><stop offset="100%" stop-color="${eyeC}" stop-opacity="0"/>
       </radialGradient>
@@ -4453,23 +4629,31 @@ function genPortraitSVG(person, opts){
     <path d="M${cx+faceW*0.35},${headCY-24} C${cx+faceW*0.9},${headCY-6} ${cx+faceW*0.8},${headCY+46} ${cx+faceW*0.3},${headBot-6}
              C${cx+faceW*0.72},${headCY+40} ${cx+faceW*0.7},${headCY-4} ${cx+faceW*0.35},${headCY-24} Z" fill="${skinD}" opacity="0.35" filter="url(#psoft)"/>
     ${fringe}
-    <!-- 眉 / 眼 / 鼻 / 嘴 -->
-    <path d="M${cx-34},${headCY-6} C${cx-24},${headCY-14} ${cx-12},${headCY-13} ${cx-6},${headCY-8}" stroke="${shade(hairC,-0.1)}" stroke-width="4.5" stroke-linecap="round" fill="none"/>
-    <path d="M${cx+6},${headCY-8} C${cx+12},${headCY-13} ${cx+24},${headCY-14} ${cx+34},${headCY-6}" stroke="${shade(hairC,-0.1)}" stroke-width="4.5" stroke-linecap="round" fill="none"/>
-    <path d="M${cx-36},${headCY+8} C${cx-26},${headCY-2} ${cx-12},${headCY-2} ${cx-4},${headCY+8} C${cx-12},${headCY+16} ${cx-26},${headCY+16} ${cx-36},${headCY+8} Z" fill="#fdfdff"/>
-    <path d="M${cx+4},${headCY+8} C${cx+12},${headCY-2} ${cx+26},${headCY-2} ${cx+36},${headCY+8} C${cx+26},${headCY+16} ${cx+12},${headCY+16} ${cx+4},${headCY+8} Z" fill="#fdfdff"/>
-    <circle cx="${cx-20}" cy="${headCY+7}" r="8.5" fill="${eyeC}"/>
-    <circle cx="${cx+20}" cy="${headCY+7}" r="8.5" fill="${eyeC}"/>
-    <circle cx="${cx-20}" cy="${headCY+7}" r="4" fill="#101018"/>
-    <circle cx="${cx+20}" cy="${headCY+7}" r="4" fill="#101018"/>
-    <circle cx="${cx-22.5}" cy="${headCY+4}" r="2.4" fill="#ffffff" opacity="0.95"/>
-    <circle cx="${cx+17.5}" cy="${headCY+4}" r="2.4" fill="#ffffff" opacity="0.95"/>
-    <path d="M${cx-37},${headCY+2} C${cx-26},${headCY-6} ${cx-11},${headCY-6} ${cx-3},${headCY+2}" stroke="#15151c" stroke-width="3.4" stroke-linecap="round" fill="none"/>
-    <path d="M${cx+3},${headCY+2} C${cx+11},${headCY-6} ${cx+26},${headCY-6} ${cx+37},${headCY+2}" stroke="#15151c" stroke-width="3.4" stroke-linecap="round" fill="none"/>
-    <path d="M${cx+2},${headCY+30} C${cx+5},${headCY+38} ${cx+1},${headCY+41} ${cx-3},${headCY+40}" stroke="${skinS}" stroke-width="3" fill="none" stroke-linecap="round"/>
-    <path d="M${cx-12},${headCY+58} C${cx-4},${headCY+64} ${cx+4},${headCY+64} ${cx+12},${headCY+57}" stroke="${shade(skin,-0.45)}" stroke-width="3.4" fill="none" stroke-linecap="round"/>
-    <ellipse cx="${cx-34}" cy="${headCY+34}" rx="13" ry="7" fill="#ff8ba0" opacity="0.16" filter="url(#psoft)"/>
-    <ellipse cx="${cx+34}" cy="${headCY+34}" rx="13" ry="7" fill="#ff8ba0" opacity="0.16" filter="url(#psoft)"/>
+    <!-- 动漫风五官：大眼 + 双层高光 + 睫线 + 细眉小嘴 -->
+    <path d="M${cx-36},${headCY-12} C${cx-26},${headCY-19} ${cx-14},${headCY-18} ${cx-7},${headCY-13}" stroke="${shade(hairC,-0.05)}" stroke-width="3.2" stroke-linecap="round" fill="none"/>
+    <path d="M${cx+7},${headCY-13} C${cx+14},${headCY-18} ${cx+26},${headCY-19} ${cx+36},${headCY-12}" stroke="${shade(hairC,-0.05)}" stroke-width="3.2" stroke-linecap="round" fill="none"/>
+    <ellipse cx="${cx-21}" cy="${headCY+4}" rx="14" ry="16" fill="#fff8fb"/>
+    <ellipse cx="${cx-21}" cy="${headCY+3}" rx="12" ry="14.5" fill="url(#iris${uid})"/>
+    <ellipse cx="${cx-21}" cy="${headCY+6}" rx="5.4" ry="6.6" fill="#141420"/>
+    <ellipse cx="${cx-25}" cy="${headCY-1}" rx="4.2" ry="5" fill="#ffffff" opacity="0.95"/>
+    <circle cx="${cx-17.5}" cy="${headCY+8.5}" r="2.2" fill="#ffffff" opacity="0.7"/>
+    <path d="M${cx-35},${headCY-3} C${cx-27},${headCY-14} ${cx-12},${headCY-14} ${cx-6},${headCY-2}" stroke="#1b1b26" stroke-width="5" stroke-linecap="round" fill="none"/>
+    <path d="M${cx-36},${headCY-4} L${cx-42},${headCY-12} M${cx-30},${headCY-8} L${cx-33},${headCY-17}" stroke="#1b1b26" stroke-width="3" stroke-linecap="round" fill="none" opacity="0.9"/>
+    <ellipse cx="${cx+21}" cy="${headCY+4}" rx="14" ry="16" fill="#fff8fb"/>
+    <ellipse cx="${cx+21}" cy="${headCY+3}" rx="12" ry="14.5" fill="url(#iris${uid})"/>
+    <ellipse cx="${cx+21}" cy="${headCY+6}" rx="5.4" ry="6.6" fill="#141420"/>
+    <ellipse cx="${cx+17}" cy="${headCY-1}" rx="4.2" ry="5" fill="#ffffff" opacity="0.95"/>
+    <circle cx="${cx+24.5}" cy="${headCY+8.5}" r="2.2" fill="#ffffff" opacity="0.7"/>
+    <path d="M${cx+6},${headCY-2} C${cx+12},${headCY-14} ${cx+27},${headCY-14} ${cx+35},${headCY-3}" stroke="#1b1b26" stroke-width="5" stroke-linecap="round" fill="none"/>
+    <path d="M${cx+36},${headCY-4} L${cx+42},${headCY-12} M${cx+30},${headCY-8} L${cx+33},${headCY-17}" stroke="#1b1b26" stroke-width="3" stroke-linecap="round" fill="none" opacity="0.9"/>
+    <path d="M${cx+1},${headCY+30} C${cx+4},${headCY+36} ${cx+1},${headCY+39} ${cx-3},${headCY+38}" stroke="${skinS}" stroke-width="2.6" fill="none" stroke-linecap="round"/>
+    <path d="M${cx-9},${headCY+53} C${cx-3},${headCY+58.5} ${cx+3},${headCY+58.5} ${cx+9},${headCY+53}" stroke="${shade(skin,-0.5)}" stroke-width="2.8" fill="none" stroke-linecap="round"/>
+    <ellipse cx="${cx-36}" cy="${headCY+30}" rx="14" ry="7" fill="#ff8ba0" opacity="0.20" filter="url(#psoft)"/>
+    <ellipse cx="${cx+36}" cy="${headCY+30}" rx="14" ry="7" fill="#ff8ba0" opacity="0.20" filter="url(#psoft)"/>
+    <path d="M${cx-faceW*0.7},${headCY-56} C${cx-faceW*0.3},${headCY-84} ${cx+faceW*0.3},${headCY-86} ${cx+faceW*0.72},${headCY-58}"
+      stroke="${hairL}" stroke-opacity="0.55" stroke-width="6" fill="none" filter="url(#psoft)"/>
+    <path d="M${cx-faceW*0.5},${headCY-44} C${cx-faceW*0.2},${headCY-64} ${cx+faceW*0.24},${headCY-66} ${cx+faceW*0.5},${headCY-46}"
+      stroke="#ffffff" stroke-opacity="0.18" stroke-width="3.5" fill="none" filter="url(#psoft)"/>
     <!-- 边缘光 -->
     <path d="M${cx+faceW-2},${headCY-40} C${cx+faceW+2},${headCY+10} ${cx+faceW*0.5},${headBot-8} ${cx+8},${headBot-2}"
       stroke="#ffffff" stroke-opacity="0.28" stroke-width="5" fill="none" filter="url(#psoft)"/>
@@ -4513,6 +4697,7 @@ function aiShoot(){
   const ph={id:'ai'+Date.now()+rnd(999), svg, title, place:sc.name, time:nowStr(),
             with:person?person.name:'', note, ai:true, portrait:!!person};
   G.photos.unshift(ph);
+  touchSave();
   toast((person?'✨ AI 立绘完成：':'✨ AI 实景完成：')+title);
   setTimeout(()=>openPhoto(ph.id), 300);
 }
@@ -4590,6 +4775,7 @@ function camShoot(){
   const ph={id:'p'+Date.now()+rnd(999), emoji:sc.emoji, bg:sc.bg, svg:genPhotoSVG(sc.id,null,{caption:title}),
             title, place:sc.name, time:nowStr(), with:'', note:pick(ev)};
   G.photos.unshift(ph);
+  touchSave();
   toast('📷 拍好了：'+title);
   setTimeout(()=>{ openPhoto(ph.id); }, 420);
 }
@@ -4711,6 +4897,7 @@ function doDaily(id){
   const c=C();
   if(d.sp) c.sp=clamp(c.sp+d.sp,0,c.maxsp);
   if(d.hp) c.hp=clamp(c.hp+d.hp,0,c.maxhp);
+  touchSave();
   const r=pick(d.res||['完成。']);
   G.userAffairs.unshift({time:nowStr(), title:d.name, result:r});
   toast(r); renderDaily();
@@ -6027,7 +6214,7 @@ function submitReq(cat, subId){
 }
 function submitInhibitorPickup(){
   const c=C();
-  if(c.identity!=='guide'){ toast('抑制剂领取为向导专属'); renderApply(); return; }
+  /* 结合热哨兵向导都会发作，两边都能领取 */
   const spec=($('inhSpec')&&$('inhSpec').value)||'口服缓释型 · 单周期用量';
   const place=($('inhPlace')&&$('inhPlace').value)||'医务室窗口';
   const unit=($('qtyUnit')&&$('qtyUnit').value)||'盒';
@@ -6055,6 +6242,7 @@ function addReq(f){
   const r=Object.assign({id:'q'+Date.now()+rnd(999), no:reqNoOf(f.cat), time:nowStr(), status:'pending', seen:true}, f);
   G.reqs.unshift(r);
   toast('已提交：'+r.no+'（'+r.catName+'），等待批复…');
+  touchSave();
   renderApply();
   /* 批复不会秒到：白塔的人也要走流程 */
   const wait = r.cat==='item' ? 25000+rnd(25000)
@@ -6081,6 +6269,7 @@ function addReq(f){
     }
     G.userAffairs.unshift({time:nowStr(), title:r.catName, result:`${r.no}：${reject?'已驳回':'已同意'}（${r.subName||''}）${r.room?' · '+r.room:''}。${r.reply}`});
     toast(reject?('申请被驳回：'+r.no):('申请已同意：'+r.no));
+    touchSave();
     if(G.app==='apply') renderApply();
     else if(G.app==='calendar') renderCalendar();
     else refreshNavBadges();
@@ -6284,6 +6473,7 @@ function submitHeatReg(){
   };
   G.heatReg=rec;
   G.heatRegLog.unshift(rec);
+  touchSave();
   G.userAffairs.unshift({time:nowStr(), title:'结合热报备',
     result:`${rec.date} ${rec.time}｜症状：${symptoms.length?symptoms.join('、'):'未填'}｜${rec.level.split(' · ')[0]}｜抑制剂 ${rec.inhib}｜医疗配合：${rec.medical}｜${rec.partner}。`});
   toast('结合热报备已提交');
@@ -6423,8 +6613,70 @@ function renderCalendar(){
     </div>`;
   renderTabbar();
 }
+/* ============ 存档：刷新/重开浏览器后保留角色，只有「重置」才重开一局 ============ */
+const SAVE_KEY='baita_save_v1';
+let SAVE_TIMER=null, SAVE_READY=false;
+function saveGame(){
+  if(!SAVE_READY || !G) return;
+  try{
+    const snap={
+      v:1, at:Date.now(),
+      roster:{ partners:PARTNERS, others:OTHERS, forum:FORUM, roster:ROSTER, mn:MN, alias:ALIAS },
+      g:Object.assign({}, G, {
+        dg:null, call:null, encounter:null, _date:null,
+        m: (G.m && G.m.meta && G.m.meta.key) ? {key:G.m.meta.key, step:G.m.step||null, started:!!G.m.started, log:G.m.log||[]} : null,
+      }),
+    };
+    localStorage.setItem(SAVE_KEY, JSON.stringify(snap));
+  }catch(e){}
+}
+function touchSave(){ if(SAVE_TIMER) clearTimeout(SAVE_TIMER); SAVE_TIMER=setTimeout(saveGame, 350); }
+function clearSave(){ try{ localStorage.removeItem(SAVE_KEY); }catch(e){} }
+function loadGame(){
+  let snap=null;
+  try{ const raw=localStorage.getItem(SAVE_KEY); if(raw) snap=JSON.parse(raw); }catch(e){}
+  newGame();                                   // 先建立一份基础 G，再用存档覆盖
+  if(!snap || snap.v!==1) return false;
+  try{
+    if(snap.roster){
+      if(Array.isArray(snap.roster.partners) && snap.roster.partners.length) PARTNERS=snap.roster.partners;
+      if(Array.isArray(snap.roster.others) && snap.roster.others.length) OTHERS=snap.roster.others;
+      if(Array.isArray(snap.roster.forum) && snap.roster.forum.length) FORUM=snap.roster.forum;
+      if(snap.roster.roster) ROSTER=snap.roster.roster;
+      if(snap.roster.mn) MN=snap.roster.mn;
+      if(snap.roster.alias){ ALIAS=snap.roster.alias; ALIAS_KEYS=Object.keys(ALIAS).sort((a,b)=>b.length-a.length); }
+    }
+    if(snap.g){
+      const g=Object.assign({}, snap.g);
+      g.dg=null; g.call=null; g.encounter=null; g._date=null;
+      if(!g.chatLog) g.chatLog={};
+      if(!g.reqs) g.reqs=[]; if(!g.sms) g.sms=[];
+      G=g;
+    }
+    /* 任务进度复位：把存档里的 step/log 接回真正的任务数据 */
+    const mSnap=G.m;
+    G.m=null;
+    if(mSnap && mSnap.key){
+      const mi=(typeof MISSIONS!=='undefined')?MISSIONS.find(x=>x.meta.key===mSnap.key):null;
+      if(mi){
+        G.m={key:mSnap.key, scenes:mi.scenes, meta:mi.meta, start:mi.start, first:mi.first,
+             log:mSnap.log||[], started:!!mSnap.started, step:mSnap.step||mi.start};
+      }
+    }
+    if(G.char && typeof buildAllyThreads==='function') buildAllyThreads();
+    SAVE_READY=true;
+    return !!G.char;
+  }catch(e){ return false; }
+}
+if(typeof window!=='undefined'){
+  window.addEventListener('beforeunload', saveGame);
+  document.addEventListener('visibilitychange', function(){ if(document.hidden) saveGame(); });
+  setInterval(saveGame, 15000);
+}
+
 /* ============ 启动 ============ */
-newGame();
+if(!loadGame()) newGame();          // 有存档就接着上次玩，没有才新开一局
+SAVE_READY=true;
 mEnsureGlobals();
 tickClock(); setInterval(tickClock, 30000);
 renderHome();
