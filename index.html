@@ -2198,6 +2198,31 @@ function retryDaily(){ if(CUR_TASK) launchDailyGame(CUR_TASK, CUR_GAME); else re
 function nowStr(){ const d=new Date(); return `${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`; }
 
 /* ============ 渲染：顶栏时钟 ============ */
+/* ============ 返回时回到原来的位置（记住每个列表页的滚动位置，不再回到顶部） ============ */
+const SCROLL_MEM={}; let LAST_PAGE_KEY='';
+function pageKeyStr(){ return String(G.app||'')+(G.openThread?(':'+G.openThread):''); }
+function scrollBox(){ try{ return document.querySelector('.scroll'); }catch(e){ return null; } }
+function installScrollMemory(){
+  const el=document.getElementById('screen'); if(!el) return;
+  try{
+    const desc=Object.getOwnPropertyDescriptor(Element.prototype,'innerHTML');
+    if(!desc||!desc.set) return;
+    Object.defineProperty(el,'innerHTML',{
+      configurable:true,
+      get(){ return desc.get.call(el); },
+      set(v){
+        try{ const sc=scrollBox(); if(sc && LAST_PAGE_KEY) SCROLL_MEM[LAST_PAGE_KEY]=sc.scrollTop; }catch(e){}
+        desc.set.call(el,v);
+        setTimeout(function(){
+          try{
+            const sc=scrollBox(); const k=pageKeyStr();
+            if(sc && SCROLL_MEM[k]) sc.scrollTop=SCROLL_MEM[k];
+          }catch(e){}
+        },0);
+      }
+    });
+  }catch(e){}
+}
 function tickClock(){
   const d=new Date();
   const hh=String(d.getHours()).padStart(2,'0');
@@ -2346,6 +2371,7 @@ function renderTabbar(){
     if(t.id==='me'     && G.created && reqUnread()) dot='<span class="tdot"></span>';
     return `<div class="tab ${active===t.id?'on':''}" onclick="${t.go}"><span class="ti">${t.ico}</span>${t.name}${dot}</div>`;
   }).join('');
+  LAST_PAGE_KEY=pageKeyStr();      // 记录"当前显示的是哪一页"，下一页渲染时按它保存滚动位置
 }
 /* 电话 / 通讯录 分段条（通讯录入口放在电话里） */
 function segPhoneContact(which){
@@ -3847,10 +3873,10 @@ function addContact(){
         <input id="acPos" class="f-inp" placeholder="例如：边境侦察组 · 三队（可留空）">
         <label class="f-lab">⑤ 你与 TA 的关系</label>
         <div class="f-row" id="acRel">
-          <span class="f-chip on" data-v="好友" onclick="pickChip('acRel',this)">好友</span>
+          <span class="f-chip on" data-v="朋友" onclick="pickChip('acRel',this)">朋友</span>
           <span class="f-chip" data-v="同事" onclick="pickChip('acRel',this)">同事</span>
-          <span class="f-chip" data-v="敬重" onclick="pickChip('acRel',this)">敬重</span>
-          <span class="f-chip" data-v="心动" onclick="pickChip('acRel',this)">心动</span>
+          <span class="f-chip" data-v="上下级" onclick="pickChip('acRel',this)">上下级</span>
+          <span class="f-chip" data-v="亲属" onclick="pickChip('acRel',this)">亲属</span>
         </div>
         <label class="f-lab">⑥ 备注 / 简介</label>
         <textarea id="acBio" class="f-inp" placeholder="随手写点什么，只有你自己看得到。"></textarea>
@@ -3875,7 +3901,7 @@ function submitContact(){
   if(!name){ toast('请先填写姓名'); return; }
   if(findPerson(name)){ toast('通讯录里已经有这个人了'); return; }
   const identity=chipVal('acId')||'sentinel';
-  const rel=chipVal('acRel')||'好友';
+  const rel=chipVal('acRel')||'朋友';
   const animal=(($('acAnimal')&&$('acAnimal').value)||'').trim()||'—';
   const pos=(($('acPos')&&$('acPos').value)||'').trim();
   const bio=(($('acBio')&&$('acBio').value)||'').trim();
@@ -6954,6 +6980,7 @@ if(typeof window!=='undefined'){
 if(!loadGame()) newGame();          // 有存档就接着上次玩，没有才新开一局
 SAVE_READY=true;
 mEnsureGlobals();
+installScrollMemory();              // 返回上一页时回到原来的滚动位置
 tickClock(); setInterval(tickClock, 30000);
 renderHome();
 </script>
