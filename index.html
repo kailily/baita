@@ -2199,9 +2199,32 @@ function nowStr(){ const d=new Date(); return `${d.getMonth()+1}/${d.getDate()} 
 
 /* ============ 渲染：顶栏时钟 ============ */
 /* ============ 返回时回到原来的位置（记住每个列表页的滚动位置，不再回到顶部） ============ */
-const SCROLL_MEM={}; let LAST_PAGE_KEY='';
-function pageKeyStr(){ return String(G.app||'')+(G.openThread?(':'+G.openThread):''); }
+const SCROLL_MEM={}; let LAST_PAGE_KEY=''; let LAST_TITLE='';
+/* 页面标识 = 应用 + 分段 + 标题 + 会话。标题直接从"刚渲染出来的 HTML"里取，
+   所以列表（标题「通讯录」）与详情（标题是人名）是两个不同标识，不会互相覆盖滚动位置。 */
+function pageKeyNow(){
+  const seg=(G.app==='chat')?(G.msgTab||''):'';
+  return String(G.app||'')+'|'+seg+'|'+(LAST_TITLE||'')+(G.openThread?(':'+G.openThread):'');
+}
+function pageKeyStr(){ return LAST_PAGE_KEY; }
 function scrollBox(){ try{ return document.querySelector('.scroll'); }catch(e){ return null; } }
+let CUR_SCROLL_EL=null;
+/* 滚动时实时记住当前位置（比只在换页那一刻取更保险） */
+function bindScrollTrack(){
+  const sc=scrollBox();
+  if(!sc || sc===CUR_SCROLL_EL) return;
+  CUR_SCROLL_EL=sc;
+  try{
+    sc.addEventListener('scroll', function(){ if(LAST_PAGE_KEY) SCROLL_MEM[LAST_PAGE_KEY]=sc.scrollTop; }, {passive:true});
+  }catch(e){}
+}
+function restoreScrollNow(){
+  try{
+    const sc=scrollBox(); if(!sc) return;
+    const v=SCROLL_MEM[LAST_PAGE_KEY];
+    if(v!=null && sc.scrollTop!==v) sc.scrollTop=v;
+  }catch(e){}
+}
 function installScrollMemory(){
   const el=document.getElementById('screen'); if(!el) return;
   try{
@@ -2213,12 +2236,10 @@ function installScrollMemory(){
       set(v){
         try{ const sc=scrollBox(); if(sc && LAST_PAGE_KEY) SCROLL_MEM[LAST_PAGE_KEY]=sc.scrollTop; }catch(e){}
         desc.set.call(el,v);
-        setTimeout(function(){
-          try{
-            const sc=scrollBox(); const k=pageKeyStr();
-            if(sc && SCROLL_MEM[k]) sc.scrollTop=SCROLL_MEM[k];
-          }catch(e){}
-        },0);
+        LAST_PAGE_KEY=pageKeyNow();              // 新页面是哪一个
+        bindScrollTrack();
+        setTimeout(restoreScrollNow, 0);
+        setTimeout(restoreScrollNow, 60);        // 有些机型要等布局完成后再设一次才生效
       }
     });
   }catch(e){}
@@ -2310,6 +2331,7 @@ const APPS = [
 function renderHome(){
   stopDg();
   G.app='home'; G.openThread=null;
+  LAST_TITLE='';                     // 首页没有标题栏：清掉上一页标题，避免页面标识串味
   $('appDot').textContent='';
   const d=new Date(); const w=['周日','周一','周二','周三','周四','周五','周六'][d.getDay()];
   const greet = G.created ? `你好，${C().name||'外勤'}` : '白塔';
@@ -2371,7 +2393,8 @@ function renderTabbar(){
     if(t.id==='me'     && G.created && reqUnread()) dot='<span class="tdot"></span>';
     return `<div class="tab ${active===t.id?'on':''}" onclick="${t.go}"><span class="ti">${t.ico}</span>${t.name}${dot}</div>`;
   }).join('');
-  LAST_PAGE_KEY=pageKeyStr();      // 记录"当前显示的是哪一页"，下一页渲染时按它保存滚动位置
+  LAST_PAGE_KEY=pageKeyNow();      // 记录"当前显示的是哪一页"（下一页渲染时按它保存滚动位置）
+  bindScrollTrack();               // 滚动时实时记住位置
 }
 /* 电话 / 通讯录 分段条（通讯录入口放在电话里） */
 function segPhoneContact(which){
@@ -2384,6 +2407,7 @@ function segPhoneContact(which){
 }
 function appBar(title, tag, back){
   setTimeout(renderTabbar,0);
+  try{ LAST_TITLE=String(resolve(title)||'').replace(/<[^>]*>/g,'').trim(); }catch(e){}
   return `<div class="appbar"><div class="back" onclick="${back||'renderHome()'}">‹</div><div class="title">${title}</div><div class="tag">${tag||''}</div></div>`;
 }
 /* 右上角语音开关（替换原来的文字标注）：参考系统音量图标的喇叭样式 */
@@ -3368,11 +3392,11 @@ function threadDeleteButton(kind, id){
 }
 function openSMS(id){
   const s=G.sms.find(x=>x.id===id); if(!s) return;
-  s.unread=0; G.app='chat'; G.openThread=null; $('appDot').textContent='消息';
+  s.unread=0; G.app='chat'; G.msgTab='sms'; G.openThread=null; $('appDot').textContent='消息';
   const body=s.lines.map(l=>`<div class="bubble ${l.who==='me'?'me':'them'}">${esc(l.t)}</div>`).join('');
   const replies=s.closed?'':s.opts.map((o,i)=>`<button class="reply" onclick="smsReply('${s.id}',${i})">${o.label}</button>`).join('');
   $('screen').innerHTML=`
-    ${appBar(s.from, s.time, 'renderChatList()')}
+    ${appBar(s.from, s.time, 'renderSmsList()')}
     <div class="chat-body" id="chatBody">${body}</div>
     <div class="chat-replies" id="chatReplies">${replies||'<div class="muted" style="text-align:center;font-size:12px;">— 已处理 —</div>'}</div>
     <div style="padding:0 14px 18px;">${threadDeleteButton('sms', s.id)}</div>`;
@@ -3950,6 +3974,7 @@ function contactDetail(name){
       ${p.pers?`<button class="btn" style="margin-top:8px;" onclick="previewVoice('${name}')">🔊 试听 TA 的声线</button>`:''}
       ${isPartner?`<button class="btn" style="margin-top:8px;" onclick="renderMatch()">🔄 搭档调度 · 申请更换</button>`:''}
     </div>`;
+  renderTabbar();
 }
 
 /* ============ 哨向论坛 ============ */
@@ -4014,6 +4039,7 @@ function renderPostDetail(id){
       <div class="card"><div class="stat-title" style="font-weight:700;color:var(--dim);font-size:13px;margin-bottom:8px;">评论</div>${comments||'<div class="muted">还没有评论，来抢沙发。</div>'}</div>
       <div class="comment-box"><input id="cinput_${p.id}" placeholder="友善发言…"><button class="btn primary" style="width:auto;margin-top:0;" onclick="addComment('${p.id}')">发送</button></div>
     </div>`;
+  renderTabbar();
 }
 function startNewPost(){
   G.app='forum'; $('appDot').textContent='论坛';
