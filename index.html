@@ -3965,20 +3965,35 @@ function addContact(){
         <input id="acAnimal" class="f-inp" placeholder="例如：雪鸮（可留空）">
         <label class="f-lab">④ 职位 / 所属</label>
         <input id="acPos" class="f-inp" placeholder="例如：边境侦察组 · 三队（可留空）">
-        <label class="f-lab">⑤ 你与 TA 的关系</label>
+        <label class="f-lab">⑤ 性格 <span style="color:var(--dim);font-weight:400;">（决定 TA 的声线，以及聊天时吃什么口吻）</span></label>
+        <div class="f-row" id="acPers">
+          <span class="f-chip on" data-v="" onclick="pickChip('acPers',this);persHint()">随机</span>
+          ${PERS.map(p=>`<span class="f-chip" data-v="${p.id}" onclick="pickChip('acPers',this);persHint()">${p.name}</span>`).join('')}
+        </div>
+        <div class="muted" id="acPersHint" style="font-size:11px;margin-top:6px;line-height:1.7;">随机：白塔会替他/她掷一个性格。选定后可看到 TA 吃哪套话。</div>
+        <label class="f-lab">⑥ 你与 TA 的关系</label>
         <div class="f-row" id="acRel">
           <span class="f-chip on" data-v="朋友" onclick="pickChip('acRel',this)">朋友</span>
           <span class="f-chip" data-v="同事" onclick="pickChip('acRel',this)">同事</span>
           <span class="f-chip" data-v="上下级" onclick="pickChip('acRel',this)">上下级</span>
           <span class="f-chip" data-v="亲属" onclick="pickChip('acRel',this)">亲属</span>
         </div>
-        <label class="f-lab">⑥ 备注 / 简介</label>
+        <label class="f-lab">⑦ 备注 / 简介</label>
         <textarea id="acBio" class="f-inp" placeholder="随手写点什么，只有你自己看得到。"></textarea>
         <button class="btn primary" id="acBtn" style="margin-top:14px;">加入通讯录</button>
       </div>
     </div>`;
   $('acBtn').onclick=submitContact;
   setTimeout(()=>{ const e=$('acName'); if(e) e.focus(); },50);
+}
+/* 选定性格后，把"TA 吃哪套话"写给玩家看 */
+function persHint(){
+  const box=$('acPersHint'); if(!box) return;
+  const id=chipVal('acPers');
+  const p=id?persById(id):null;
+  box.innerHTML = p
+    ? `<b>${p.name}</b>：${p.bio}<br><span style="color:var(--gold)">吃的口吻</span>：${p.like.join(' / ')}　<span style="color:var(--bad)">雷点</span>：${p.hate.join(' / ')}`
+    : '随机：白塔会替他/她掷一个性格。选定后可看到 TA 吃哪套话。';
 }
 function pickChip(group, el){
   const box=$(group); if(!box) return;
@@ -3996,11 +4011,15 @@ function submitContact(){
   if(findPerson(name)){ toast('通讯录里已经有这个人了'); return; }
   const identity=chipVal('acId')||'sentinel';
   const rel=chipVal('acRel')||'朋友';
+  const persId=chipVal('acPers');
+  const pers=persId?persById(persId):rollPers();          // 没选就随机一个
   const animal=(($('acAnimal')&&$('acAnimal').value)||'').trim()||'—';
   const pos=(($('acPos')&&$('acPos').value)||'').trim();
   const bio=(($('acBio')&&$('acBio').value)||'').trim();
+  const voice=voiceForPers(pers.id, name);                // 声线由性格决定
   G.userContacts.push({name, identity, animal, pos, dept:'', rank:'—',
     tag:identity==='sentinel'?'自建 · 哨兵':'自建 · 向导',
+    pers, persName:pers.name, voice,
     bio: bio || '你自行添加的联系人。', color:'#2a2240', userAdded:true});
   G.affinity[name]=G.affinity[name]||0;
   G.relation[name]=rel;
@@ -4033,9 +4052,11 @@ function contactDetail(name){
           ${isPartner?'<span class="pill" style="color:var(--spirit);border-color:var(--spirit)">★ 搭档</span>':''}</div>
         <div class="muted" style="font-size:12px;">${p.tag||(p.identity?(p.identity==='sentinel'?'哨兵':'向导'):'')}</div>
         <div id="rmkBox" style="text-align:left;"></div>
-        <div style="margin-top:8px;">${p.identity?`<span class="pill ${p.identity==='sentinel'?'sentinel':'guide'}">${p.identity==='sentinel'?'哨兵':'向导'}</span>`:''}${p.animal&&p.animal!=='—'?`<span class="pill">精神体 ${p.animal}</span>`:''}${p.pos?`<span class="pill">职位 ${p.pos}</span>`:''}</div>
+        <div style="margin-top:8px;">${p.identity?`<span class="pill ${p.identity==='sentinel'?'sentinel':'guide'}">${p.identity==='sentinel'?'哨兵':'向导'}</span>`:''}${p.animal&&p.animal!=='—'?`<span class="pill">精神体 ${p.animal}</span>`:''}${p.pos?`<span class="pill">职位 ${p.pos}</span>`:''}${(p.userAdded&&p.pers)?`<span class="pill" style="color:var(--gold);border-color:var(--gold)">性格 ${p.pers.name}</span>`:''}</div>
         ${affBar}
       </div>
+      ${(p.userAdded&&p.pers)?`<div class="card"><div class="stat-title" style="font-weight:700;color:var(--dim);font-size:13px;margin-bottom:8px;">你给 TA 写的性格</div>
+        <div class="muted" style="font-size:13px;line-height:1.75;"><b>${p.pers.name}</b>：${p.pers.bio}<br><span style="color:var(--gold)">吃的口吻</span>：${p.pers.like.join(' / ')}　<span style="color:var(--bad)">雷点</span>：${p.pers.hate.join(' / ')}<br>声线：${voiceLabelOf(name)}（由性格决定）</div></div>`:''}
       <div class="card"><div class="stat-title" style="font-weight:700;color:var(--dim);font-size:13px;margin-bottom:8px;">档案</div><div class="muted" style="font-size:13px;line-height:1.7;">${bio}</div></div>
       ${relHtml}
       ${bondApply}
@@ -5067,9 +5088,35 @@ function rollVoiceProfile(){
     vIdx:  Math.floor(Math.random()*997),
   };
 }
+/* 性格 → 声线：同一性格的人音色接近（冷硬低沉慢、热忱快而亮……），再按名字微调 */
+const PERS_VOICE={
+  cold:  {rate:0.93, pitch:0.90, volume:0.95},
+  gentle:{rate:0.95, pitch:1.02, volume:0.96},
+  sharp: {rate:1.08, pitch:1.06, volume:1.00},
+  strict:{rate:0.98, pitch:0.97, volume:0.98},
+  proud: {rate:1.02, pitch:0.99, volume:1.00},
+  warm:  {rate:1.09, pitch:1.08, volume:1.00},
+  gloomy:{rate:0.90, pitch:0.88, volume:0.93},
+  smooth:{rate:1.00, pitch:1.03, volume:0.97},
+};
+function persById(id){ return PERS.find(p=>p.id===id)||null; }
+function persByName(name){ return PERS.find(p=>p.name===name)||null; }
+function voiceForPers(persId, name){
+  const base=PERS_VOICE[persId]||{rate:1.0,pitch:1.0,volume:0.98};
+  const h=hashStr(String(name||'')+'|'+String(persId||''));
+  const j=k=>{ const x=Math.sin(h*(k+1))*10000; return x-Math.floor(x); };
+  return {
+    rate:  +(clamp(base.rate  +(j(1)-0.5)*0.08, 0.70, 1.40)).toFixed(2),
+    pitch: +(clamp(base.pitch +(j(2)-0.5)*0.10, 0.60, 1.50)).toFixed(2),
+    volume:+(clamp(base.volume+(j(3)-0.5)*0.05, 0.60, 1.00)).toFixed(2),
+    vIdx:  Math.floor(j(4)*997),
+  };
+}
 function voiceProfileOf(name){
   const p=findPerson(name);
   if(p && p.voice) return p.voice;
+  /* 有性格（含玩家自建的联系人）→ 按性格定声线 */
+  if(p && p.pers && p.pers.id){ p.voice=voiceForPers(p.pers.id, name); return p.voice; }
   if(!G) return rollVoiceProfile();
   if(!G.voiceProfiles) G.voiceProfiles={};
   if(!G.voiceProfiles[name]) G.voiceProfiles[name]=rollVoiceProfile();
