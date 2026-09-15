@@ -841,6 +841,10 @@ function newGame(){
     chatProgress:{},           // threadId -> step
     unread:{},                 // threadId -> 未读条数（打开清零，新消息再加）
     userPosts:[],              // 论坛用户发帖
+    forumNews:0,               // 论坛新动静（点赞/评论/回复/删帖）未读数
+    forumNext:0,               // 下一次论坛刷新的时间戳
+    forumSeq:100,              // NPC 新帖编号
+    forumReplyQ:[],            // 待回复"玩家的发言"队列
     userAffairs:[],            // 日常事务记录
     sootheReqs:[],             // 疏导预约申请 {from,to,status:'pending'|'accepted'|'rejected',time,note}
     sootheNext:0,              // 下一条疏导申请到达的时间戳（向导不定期刷新）
@@ -2253,6 +2257,7 @@ function tickClock(){
   const lt=$('lockTime'); if(lt) lt.textContent=`${hh}:${mm}`;
   const ld=$('lockDate'); if(ld){ const w=['周日','周一','周二','周三','周四','周五','周六'][d.getDay()]; ld.textContent=`${w} · ${d.getMonth()+1}月${d.getDate()}日`; }
   sootheTick();                       // 向导的疏导申请会不定期刷新
+  forumTick();                        // 论坛会不定期冒出新帖/新评论/点赞/删帖
 }
 
 /* ============ 向导：疏导申请不定期刷新 ============ */
@@ -2318,7 +2323,7 @@ const APPS = [
   {id:'tower', name:'任务中心', ico:'🏛', cls:'ic-white', dot:()=>Object.keys(G.missionsDone).length>0?'':''},
   {id:'phone', name:'电话', ico:'📞', cls:'ic-phone', dot:()=>missedCallCount()||''},
   {id:'chat',  name:'消息', ico:'💬', cls:'ic-chat', dot:()=>unreadTotal()||''},
-  {id:'forum', name:'哨向论坛',ico:'📝', cls:'ic-forum'},
+  {id:'forum', name:'哨向论坛',ico:'📝', cls:'ic-forum', dot:()=>G.forumNews||''},
   {id:'match', name:'匹配', ico:'💞', cls:'ic-match', dot:()=> G.bondApp&&G.bondApp.status==='pending'?'●':(G.match&&G.match.done?'✓':'')},
   {id:'map', name:'地图', ico:'🗺', cls:'ic-map'},
   {id:'daily', name:'日常事务', ico:'🗓', cls:'ic-me'},
@@ -3987,7 +3992,8 @@ function postBoard(p){
   return t==='置顶'?'官方':(BOARDS.indexOf(t)>=0?t:'闲聊');
 }
 function renderForum(){
-  G.app='forum'; $('appDot').textContent='论坛';
+  G.app='forum'; $('appDot').textContent='论坛'; G.openPost=null;
+  G.forumNews=0;                              // 打开论坛即视为看过新动静
   const board=G.forumBoard||'全部';
   const all=[...FORUM, ...G.userPosts];
   const boards=['全部'].concat(BOARDS.filter(b=>all.some(p=>postBoard(p)===b)));
@@ -4018,10 +4024,15 @@ function renderForum(){
     </div>`;
 }
 function renderPostDetail(id){
-  const p=findPost(id); if(!p) return;
-  G.app='forum';
+  const p=findPost(id); if(!p){ toast('这条帖子已经被删了'); renderForum(); return; }
+  G.app='forum'; G.openPost=id;
   const liked=G.forumLiked[p.id];
-  const comments=p.comments.map(c=>`<div class="comment"><b>${c.n}</b>：${c.t}</div>`).join('');
+  const comments=p.comments.map(c=>{
+    const isMine=c.mine||(G.char&&c.n===C().name);
+    const isReply=c.re||/^回你/.test(String(c.t));
+    return `<div class="comment" style="${isMine?'border-left:2px solid var(--guide);padding-left:8px;':(isReply?'border-left:2px solid var(--spirit);padding-left:8px;':'')}">
+      <b>${esc(c.n)}</b>${isMine?' <span class="pill" style="font-size:9px;color:var(--guide);border-color:var(--guide)">我</span>':''}${isReply?' <span class="pill" style="font-size:9px;color:var(--spirit);border-color:var(--spirit)">回你</span>':''}：${esc(c.t)}</div>`;
+  }).join('');
   $('screen').innerHTML=`
     ${appBar(p.title,'详情 · 哨向论坛','renderForum()')}
     <div class="scroll">
@@ -4084,6 +4095,10 @@ function submitPost(){
   const id='u'+G.userPosts.length+'_'+rnd(9999);
   G.userPosts.unshift({id, name:anon?'匿名':me, idtag:anon?'匿名':idtag, time:'刚刚',
     title:(/^【/.test(title)?title:('【'+board+'】'+title)), board, body:body||'(无内容)', likes:0, comments:[]});
+  /* 发完帖：塔里的人很快就会看到 —— 一分钟后开始陆续有点赞和评论 */
+  G.forumNext=Math.min(G.forumNext||Infinity, Date.now()+45000+rnd(45000));
+  if(!G.forumReplyQ) G.forumReplyQ=[];
+  G.forumReplyQ.push({post:id, at:Date.now()+(50000+rnd(60000))});
   G.forumBoard=board;
   toast('已发布到「'+board+'」板块');
   renderForum();
@@ -4093,9 +4108,129 @@ function addComment(id){
   const inp=$('cinput_'+id); const v=(inp&&inp.value||'').trim();
   if(!v) return;
   const p=findPost(id); const me = G.created?C().name:'匿名外勤';
-  p.comments.push({n:me, t:v}); inp.value=''; renderPostDetail(id); toast('评论已发送');
+  p.comments.push({n:me, t:v, mine:true, time:nowStr()}); inp.value=''; renderPostDetail(id); toast('评论已发送');
+  touchSave();
+  /* 你的发言塔里人都会看到：过一会儿可能有人来回你 */
+  if(!G.forumReplyQ) G.forumReplyQ=[];
+  G.forumReplyQ.push({post:id, at:Date.now()+(25+rnd(95))*1000});
 }
 function focusComment(id){ const e=$('cinput_'+id); if(e) e.focus(); }
+
+/* ================= 论坛"活起来"：不定期刷新帖子 / 评论 / 点赞 / 删帖 / 回你的发言 ================= */
+const NPC_POSTS=[
+  {b:'闲聊', t:'【闲聊】夜班的人是不是都有一张死人脸',
+    p:'连着第三个夜班，今天照镜子把自己吓到了。有没有同款，求个活过来的办法。'},
+  {b:'闲聊', t:'【闲聊】塔下粥铺的红豆沙到底几点开卖',
+    p:'去了四次都没买到。老板说「来晚了」，可我十点就去了。有人在凌晨抢到过吗。'},
+  {b:'求助', t:'【求助】精神体不吃东西怎么办',
+    p:'{animal}这两天连最喜欢的冻干都不碰，就趴着。医疗组说没病，可我看它就是不对劲。'},
+  {b:'求助', t:'【求助】过载到 90 以上是什么感觉',
+    p:'今天读数飙到 92，眼前全是白的，听见谁说话都像在吼。想问问大家这时候都怎么压下去。'},
+  {b:'任务', t:'【任务】下游老站三层求个向导',
+    p:'残余回响很重，一个人下不去。报酬从白塔走流程，我私人再加一顿饭。'},
+  {b:'任务', t:'【任务】有没有人接过编号 E 开头的活',
+    p:'组里分到一个，档案薄得像被人抽过页。想找个做过的问问水有多深。'},
+  {b:'树洞', t:'【树洞】我把搭档的伤接过来之后，自己开始怕黑',
+    p:'不是他的错。是我太想当个靠得住的人，结果把自己那块也赔进去了。'},
+  {b:'树洞', t:'【树洞】有些话说出口就轻了，可我张不开嘴',
+    p:'想跟一个人说谢谢，想了两年。今天又没说出来。'},
+  {b:'闲聊', t:'【闲聊】静音室里最好睡的其实是那张旧躺椅',
+    p:'新换的皮垫太软，反而睡不着。有没有人跟我一样认那张旧的。'},
+  {b:'求助', t:'【求助】怎么跟搭档说「我需要你」',
+    p:'不是任务意义上的。就是……普通的、人的那种需要。'},
+  {b:'任务', t:'【任务】雾灯街后半夜的怪声有没有人查过',
+    p:'像有人在数数，数到一百就停，然后重来。我怀疑不是人。'},
+  {b:'闲聊', t:'【闲聊】今天谁在训练场把沙袋打爆了',
+    p:'收拾的时候满地都是。我只想说，那位兄弟，你还好吗。'},
+];
+const NPC_COMMENTS=[
+  ['这个我懂，我上周也是这样。','别硬扛，去静音室待一会儿比什么都管用。'],
+  ['看到一半以为是自己的事。','有些话写出来就轻了，写得挺好。'],
+  ['我倒觉得反过来也成立。','反正塔里就是这样，谁也别笑话谁。'],
+  ['+1，先把自己护住再谈别的。','共感不是吞下去，是引渡——有人这么跟我说过。'],
+  ['别人我不知道，我肯定做不到。','你已经比我强了。'],
+  ['笑死，我还以为只有我们家这样。','精神体都一个德行，别当真。'],
+  ['这类事最好找首席聊一次，他嘴上凶，其实管用。','别一个人扛着。'],
+  ['先喝口水吧。','真的，哨兵下台第一件事就是喝水。'],
+];
+const NPC_REPLIES=[
+  ['回你上一句：我懂，我也有过这种时候。','不想说就别说，我在。'],
+  ['你这个说法我记下了。','比塔里那些讲义有用。'],
+  ['哈哈哈，你说得对。','行，我服。'],
+  ['……看完沉默了一会儿。','你说得比我写得好。'],
+  ['别急着扛，先睡一觉。','明天再说。'],
+  ['你也是我们这行的吧，那你更该知道怎么卸。'],
+];
+function forumAuthor(){
+  const pool=[].concat(PARTNERS, OTHERS.filter(o=>!o.hidden));
+  if(pool.length && rnd(10)<6){ const p=pick(pool); return {n:p.name, tag:(p.identity==='sentinel'?'哨兵':'向导')}; }
+  return {n:pick(BOARD_HANDLES), tag:pick(['哨兵','向导','幼哨','向导'])};
+}
+function forumNews(n){ G.forumNews=(G.forumNews||0)+(n||1); refreshNavBadges(); }
+function newNpcPost(){
+  const t=pick(NPC_POSTS), a=forumAuthor();
+  G.forumSeq=(G.forumSeq||100)+1;
+  const post={ id:'n'+G.forumSeq, name:a.n, idtag:a.tag, time:'刚刚',
+    title:t.t, board:t.b, body:String(t.p).replace(/\{animal\}/g,pick(GUIDE_ANIMALS)), likes:rnd(6), comments:[] };
+  FORUM.unshift(post);
+  return post;
+}
+function npcLikeSomething(){
+  const mine=G.userPosts.filter(p=>!p.locked);
+  const all=[].concat(FORUM, mine);
+  if(!all.length) return;
+  const target=(mine.length && rnd(10)<7)?pick(mine):pick(all);   // 更爱给你的帖子点赞
+  target.likes=(target.likes||0)+1+rnd(3);
+  if(G.userPosts.indexOf(target)>=0){ forumNews(1); toast('❤ 有人在论坛给你的帖子点了赞'); }
+}
+function npcCommentSomething(){
+  const mine=G.userPosts.filter(p=>!p.locked);
+  const all=[].concat(FORUM, mine);
+  if(!all.length) return;
+  const target=(mine.length && rnd(10)<6)?pick(mine):pick(all);
+  pick(NPC_COMMENTS).forEach(line=>target.comments.push({n:forumAuthor().n, t:line, time:'刚刚'}));
+  if(G.userPosts.indexOf(target)>=0){ forumNews(1); toast('💬 有人在论坛回复了你的帖子'); }
+}
+function npcReplyToPlayer(){
+  if(!G.forumReplyQ || !G.forumReplyQ.length) return false;
+  const now=Date.now();
+  const i=G.forumReplyQ.findIndex(q=>q.at<=now);
+  if(i<0) return false;
+  const q=G.forumReplyQ.splice(i,1)[0];
+  const p=findPost(q.post); if(!p) return false;
+  pick(NPC_REPLIES).forEach(t=>p.comments.push({n:forumAuthor().n, t:t, re:true, time:'刚刚'}));
+  forumNews(1); toast('↩ 有人回了你在论坛的发言');
+  return true;
+}
+function npcDeletePost(){
+  const cand=FORUM.filter(p=>p.id!=='f2');        // 官方置顶不会被删
+  if(!cand.length) return;
+  const p=pick(cand);
+  const i=FORUM.indexOf(p); if(i<0) return;
+  FORUM.splice(i,1);
+  const official=rnd(10)<4;
+  if(G.app==='forum') toast(official?('官方删除了一条帖子：'+p.title.slice(0,14)+'…'):(p.name+' 删掉了自己的帖子'));
+  else forumNews(1);
+}
+function forumTick(){
+  if(!G.char || G.locked) return;
+  const now=Date.now();
+  if(!G.forumNext){ G.forumNext=now+(70+rnd(110))*1000; return; }
+  if(now<G.forumNext) return;
+  G.forumNext=now+(80+rnd(170))*1000;
+  if(npcReplyToPlayer()){ /* 优先处理"回你的发言" */ }
+  else {
+    const roll=rnd(100);
+    if(roll<26) newNpcPost();
+    else if(roll<54) npcLikeSomething();
+    else if(roll<84) npcCommentSomething();
+    else if(roll<94) npcDeletePost();
+    else { npcLikeSomething(); npcCommentSomething(); }
+  }
+  touchSave();
+  if(G.app==='forum') renderForum();
+  else if(G.openPost) renderPostDetail(G.openPost);
+}
 
 /* ============ 匹配系统 ============ */
 function renderMatch(){
