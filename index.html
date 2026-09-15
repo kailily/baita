@@ -890,9 +890,35 @@ function deriveRank(attr, identity){
 }
 function derivePartner(attr, identity){
   const want = identity==='sentinel' ? 'guide' : 'sentinel';
-  const pool = PARTNERS.filter(p=>p.identity===want);
+  const myRank = deriveRank(attr, identity).label;
+  const info = matchPool(myRank, want);
+  const pool = info.pool.length ? info.pool : PARTNERS.filter(p=>p.identity===want);
   const key = attr.spi*3 + (identity==='sentinel'?attr.per:attr.spi) + (identity==='sentinel'?attr.con:attr.cha);
   return pool[((key % pool.length)+pool.length)%pool.length];
+}
+/* —— 搭档匹配的等级规则：同级优先；同级人太少（或本身是 S 级）才允许差一级；差两级以上不配 —— */
+function matchPool(myRank, wantSide){
+  const my=gradeVal(myRank);
+  const all=PARTNERS.filter(p=>p.identity===(wantSide|| (C().identity==='sentinel'?'guide':'sentinel')));
+  const exact=all.filter(p=>gradeVal(p.rank)===my);
+  const near=all.filter(p=>Math.abs(gradeVal(p.rank)-my)===1);
+  /* S 级塔内本就极少，允许配 A；同级不足 2 人时也放开一级 */
+  const allowNear = exact.length<2 || my>=5;
+  const pool = allowNear ? exact.concat(near) : (exact.length?exact:all);
+  return { all, exact, near, allowNear, pool, my };
+}
+function gradeMatchOk(myRank, candRank){
+  const a=gradeVal(myRank), b=gradeVal(candRank);
+  if(a===b) return true;
+  if(Math.abs(a-b)!==1) return false;                 // 差两级以上：白塔不批
+  return matchPool(myRank).allowNear;
+}
+function gradeMatchNote(myRank){
+  const info=matchPool(myRank);
+  if(!info.near.length && info.exact.length) return '白塔按评级优先推给你同级的搭档；同级的人目前就这几位。';
+  if(info.my>=5 && !info.exact.length) return '塔内 S 级向导本就极少，白塔为你开放到 A 级候选。';
+  if(info.allowNear) return '同级的人手不足，白塔允许你看一位相差一级的候选。';
+  return '匹配按评级就近安排：一般不会相差超过一级。';
 }
 function calcMatch(attr, cand){
   // 契合度：精神力接近、主属性互补更优
@@ -4239,23 +4265,27 @@ function renderMatch(){
   const c=C(); const attr=c.attr;
   // 选择新搭档候选人页
   if(G._changePick){
-    const cands=PARTNERS.filter(p=>p.identity!==c.identity && p.name!==c.partnerName);
+    const info=matchPool(c.rank, c.identity==='sentinel'?'guide':'sentinel');
+    const allowed=info.pool.length?info.pool:PARTNERS.filter(p=>p.identity!==c.identity);
+    const cands=allowed.filter(p=>p.name!==c.partnerName);
     const list=cands.map(p=>`<div class="thread" onclick="applyChangePartner('${p.name}')">
       <div class="av" style="background:${p.color}">${p.name[0]}</div>
-      <div style="flex:1;min-width:0;"><div class="t-name">${p.name}</div>
-      <div class="t-last">${p.tag} · 精神体 ${p.animal}</div></div>
+      <div style="flex:1;min-width:0;"><div class="t-name">${p.name} <span class="pill lv" style="font-size:9px;">${gradeText(p.rank)}</span></div>
+      <div class="t-last">${p.tag} · 精神体 ${p.animal}${gradeVal(p.rank)!==gradeVal(c.rank)?' · 评级相差一级（同级人手不足）':''}</div></div>
       ${G.affinity[p.name]!=null?`<span class="aff-line" style="margin-left:auto;flex-shrink:0;">${affBadge(G.affinity[p.name])}</span>`:''}
     </div>`).join('');
     $('screen').innerHTML=`${appBar('选择新搭档','搭档调度','renderMatch()')}
       <div class="scroll">
-        <div class="card muted" style="font-size:12px;line-height:1.7;">白塔允许在不影响任务的前提下申请更换搭档。选择一位异性觉醒者作为新搭档候选（若当前为伴侣关系，将一并解除）。</div>
+        <div class="card muted" style="font-size:12px;line-height:1.7;">白塔允许在不影响任务的前提下申请更换搭档。名单已按<b>评级就近</b>筛过：${gradeMatchNote(c.rank)}</div>
         ${list || '<div class="muted">没有可更换的候选。</div>'}
         <button class="btn" style="margin-top:6px;" onclick="G._changePick=false;renderMatch()">取消</button>
       </div>`;
     return;
   }
-  // 匹配规则：哨兵只能与向导结合，向导只能与哨兵结合
-  const cands=PARTNERS.filter(p=>p.identity!==c.identity).map(p=>({p, score:calcMatch(attr,p)})).sort((a,b)=>b.score-a.score);
+  // 匹配规则：哨兵只能与向导结合，向导只能与哨兵结合；评级就近（同级优先，最多相差一级）
+  const minfo=matchPool(c.rank, c.identity==='sentinel'?'guide':'sentinel');
+  const eligible=minfo.pool.length?minfo.pool:PARTNERS.filter(p=>p.identity!==c.identity);
+  const cands=eligible.map(p=>({p, score:calcMatch(attr,p)})).sort((a,b)=>b.score-a.score);
   const best=cands[0];
   let appCard='';
   if(G.bondApp){
@@ -4282,8 +4312,8 @@ function renderMatch(){
         : (bondable ? `<button class="btn primary" style="width:auto;margin-top:0;font-size:12px;padding:6px 10px;" onclick="doMatch('${p.name}')">申请结合</button>` : ''));
     return `<div class="cand">
       <div class="av" style="background:${p.color}">${p.name[0]}</div>
-      <div class="c-info"><div class="c-name">${p.name} ${tag}</div>
-        <div class="c-meta">${p.tag} · 精神体 ${p.animal} · 契合 ${score}%</div></div>
+      <div class="c-info"><div class="c-name">${p.name} <span class="pill lv" style="font-size:9px;">${gradeText(p.rank)}</span> ${tag}</div>
+        <div class="c-meta">${p.tag} · 精神体 ${p.animal} · 契合 ${score}%${gradeVal(p.rank)!==gradeVal(c.rank)?' · 差一级':''}</div></div>
       <div class="c-act">
         ${act}
         <button class="btn" style="width:auto;margin-top:0;font-size:12px;padding:6px 10px;" onclick="openThreadFromMatch('${p.name}')">聊天</button>
@@ -4344,6 +4374,10 @@ function renderMatch(){
 }
 function doMatch(name){
   const p=PARTNERS.find(x=>x.name===name); if(!p) return;
+  if(!gradeMatchOk(C().rank, p.rank)){
+    toast(`评级相差太多：你是 ${gradeText(C().rank)}，白塔不批与 ${gradeText(p.rank)} 的结合`);
+    return;
+  }
   if(!canBondWith(name)){ toast('契合度或好感度尚未达到更进一步的条件'); return; }
   const c=C(); const score=calcMatch(c.attr,p);
   G.bondApp={ to:p.name, status:'pending', score, time:nowStr(),
