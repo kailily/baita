@@ -762,11 +762,13 @@ function makePerson(name, identity){
     rank, pers, persName:pers.name, voice:rollVoiceProfile(),
     bio:`${isS?'哨兵':'向导'} · ${P.dept}${P.pos}。精神体「${animal}」。评级 ${gradeText(rank)}。${pick(ARCHIVE_TAILS)}` };
 }
-/* 重掷本局全塔名单 */
+/* 重掷本局全塔名单：人数比原来多，评级分布先给一版基础值，
+   等玩家入册算出评级后再按他的等级重新分配（见 regradeRoster） */
+const PARTNER_COUNT=28;
 function rollRoster(){
   const nm=makeNamer();
   PARTNERS=[];
-  for(let i=0;i<12;i++) PARTNERS.push(makePerson(nm(), i%2===0?'sentinel':'guide'));
+  for(let i=0;i<PARTNER_COUNT;i++) PARTNERS.push(makePerson(nm(), i%2===0?'sentinel':'guide'));
 
   const ms=Object.assign(makePerson(nm(),'sentinel'), {role:'mentor', idfor:'sentinel', pos:'白塔塔长', dept:'白塔中枢', rank:'S', tag:'白塔塔长 · 哨兵'});
   const mg=Object.assign(makePerson(nm(),'guide'),    {role:'mentor', idfor:'guide',    pos:'白塔首席向导', dept:'白塔中枢', rank:'S', tag:'白塔首席向导'});
@@ -794,6 +796,42 @@ function aliasText(s){
     if(s.indexOf(k)>=0) s=s.split(k).join(ALIAS[k]);
   }
   return s;
+}
+/* —— 按玩家评级重排全塔名单：本等级人多（十几个），相邻等级有几个，差得远的很少 ——
+   这样每个等级都挑得出手，S 级也不会无人可配。 */
+const REGRADE_MIX={
+  S:{S:10,A:7, B:6, C:3, D:2},
+  A:{A:13,S:3, B:8, C:3, D:1},
+  B:{B:13,A:7, C:6, S:1, D:1},
+  C:{C:13,B:8, D:4, A:2, S:1},
+  D:{D:13,C:8, B:4, A:2, S:1},
+};
+function hashOf(s){ let h=2166136261; for(let i=0;i<String(s).length;i++){ h^=String(s).charCodeAt(i); h=Math.imul(h,16777619); } return (h>>>0); }
+function regradeRoster(rank){
+  if(!PARTNERS.length) return;
+  const mix=REGRADE_MIX[rank]||REGRADE_MIX.B;
+  const keys=Object.keys(mix);
+  ['sentinel','guide'].forEach(side=>{
+    const pool=PARTNERS.filter(p=>p.identity===side);
+    if(!pool.length) return;
+    const total=keys.reduce((a,k)=>a+mix[k],0);
+    /* 按最大余数法精确分配（避免四舍五入把"本等级"的份额吃掉） */
+    const raw=keys.map(k=>({k:k, exact:mix[k]*pool.length/total}));
+    const bag=[];
+    raw.forEach(r=>{ r.n=Math.floor(r.exact); r.rem=r.exact-r.n; for(let i=0;i<r.n;i++) bag.push(r.k); });
+    let left=pool.length-bag.length;
+    raw.slice().sort(function(a,b){ return (b.rem-a.rem) || (a.k===rank?-1:(b.k===rank?1:0)); })
+       .forEach(function(r){ if(left>0){ bag.push(r.k); left--; } });
+    while(bag.length<pool.length) bag.push(rank);
+    while(bag.length>pool.length) bag.pop();
+    /* 按 名字+评级 的稳定散列排序后发放：同一个人每次读档拿到的等级一致 */
+    const ordered=pool.slice().sort((a,b)=>hashOf(a.name+'|'+rank)-hashOf(b.name+'|'+rank));
+    ordered.forEach((p,i)=>{
+      const g=bag[i]||rank;
+      p.rank=g;
+      p.bio=String(p.bio||'').replace(/评级\s*[SABCD]级/, '评级 '+gradeText(g));
+    });
+  });
 }
 /* 论坛：帖子与回复也按本局名单重掷 */
 function buildForum(){
@@ -902,8 +940,8 @@ function matchPool(myRank, wantSide){
   const all=PARTNERS.filter(p=>p.identity===(wantSide|| (C().identity==='sentinel'?'guide':'sentinel')));
   const exact=all.filter(p=>gradeVal(p.rank)===my);
   const near=all.filter(p=>Math.abs(gradeVal(p.rank)-my)===1);
-  /* S 级塔内本就极少，允许配 A；同级不足 2 人时也放开一级 */
-  const allowNear = exact.length<2 || my>=5;
+  /* S 级塔内本就少：同级不足 3 人时放开到 A；同级不足 2 人时一律放开一级 */
+  const allowNear = exact.length<2 || (my>=5 && exact.length<3);
   const pool = allowNear ? exact.concat(near) : (exact.length?exact:all);
   return { all, exact, near, allowNear, pool, my };
 }
@@ -2685,6 +2723,7 @@ function finalizeCharacter(edit){
   // 精神体加成并入属性（计入评级）
   attr[animal.bonus]+=1;
   const rk=deriveRank(attr,id);
+  regradeRoster(rk.label);                  // 按玩家评级重排全塔名单：本等级人最多，相邻等级少量
   const nameEl=$('inName');
   const name = edit ? (((nameEl&&nameEl.value||'').trim()) || c0.name) : randName();
   let c, pr;
@@ -7190,6 +7229,7 @@ function loadGame(){
       }
     }
     if(G.char && typeof buildAllyThreads==='function') buildAllyThreads();
+    if(G.char && typeof regradeRoster==='function') regradeRoster(C().rank);   // 名单等级与玩家评级对齐
     if(G.photos) delete G.photos;                 // 相机功能已移除，顺手清掉旧存档里的相册
     SAVE_READY=true;
     return !!G.char;
