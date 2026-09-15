@@ -3918,14 +3918,12 @@ function renderContacts(){
     const isPartner=G.char && C().partnerName===p.name;
     const af=G.affinity[p.name];
     const canBond = !isPartner && canBondWith(p.name);
-    const badge = af!=null ? `<span class="aff-line" style="margin-left:auto;flex-shrink:0;">${affBadge(af)}<span class="aff-note">${affStageText(af)}</span></span>` : '';
-    const tag = isPartner ? '<span class="pill" style="color:var(--spirit);border-color:var(--spirit)">★ 搭档</span>'
-      : (canBond ? '<span class="pill" style="color:var(--bad);border-color:rgba(255,107,138,.5)">💗 更进一步</span>' : '');
     const rk=G.remarks[p.name];
+    /* 列表里只留名字与身份信息：搭档标记、好感徽标、性格等都收进详情页 */
     return `<div class="thread" onclick="contactDetail('${p.name}')">
       <div class="av" style="background:${p.color||'#26334f'}">${p.name[0]}</div>
       <div style="flex:1;min-width:0;">
-        <div class="t-name">${esc(dispName(p.name))} ${tag}${badge}</div>
+        <div class="t-name">${esc(dispName(p.name))}</div>
         <div class="t-last">${rk?`<span style="color:var(--gold)">备注名</span> · `:''}${p.identity?(p.identity==='sentinel'?'哨兵':'向导'):''} ${p.animal&&p.animal!=='—'?('· 精神体 '+p.animal):''} ${p.pos?' · 职位 '+p.pos:''}</div>
       </div>
     </div>`;
@@ -4048,16 +4046,19 @@ function contactDetail(name){
       <div class="card" style="text-align:center;">
         <div class="av" style="background:${p.color||'#26334f'};width:64px;height:64px;font-size:30px;margin:0 auto 10px;">${p.name[0]}</div>
         <div style="font-weight:700;font-size:17px;">${esc(dispName(p.name))}${rk?`<span class="muted" style="font-size:12px;font-weight:400;">（${esc(p.name)}）</span>`:''}
-          <span id="rmkBtn" style="cursor:pointer;font-size:13px;color:var(--gold);" onclick="editRemark('${p.name}','rmkBox')"> ✎</span>
-          ${isPartner?'<span class="pill" style="color:var(--spirit);border-color:var(--spirit)">★ 搭档</span>':''}</div>
-        <div class="muted" style="font-size:12px;">${p.tag||(p.identity?(p.identity==='sentinel'?'哨兵':'向导'):'')}</div>
+          <span id="rmkBtn" style="cursor:pointer;font-size:13px;color:var(--gold);" onclick="editRemark('${p.name}','rmkBox')"> ✎</span></div>
         <div id="rmkBox" style="text-align:left;"></div>
-        <div style="margin-top:8px;">${p.identity?`<span class="pill ${p.identity==='sentinel'?'sentinel':'guide'}">${p.identity==='sentinel'?'哨兵':'向导'}</span>`:''}${p.animal&&p.animal!=='—'?`<span class="pill">精神体 ${p.animal}</span>`:''}${p.pos?`<span class="pill">职位 ${p.pos}</span>`:''}${(p.userAdded&&p.pers)?`<span class="pill" style="color:var(--gold);border-color:var(--gold)">性格 ${p.pers.name}</span>`:''}</div>
         ${affBar}
       </div>
-      ${(p.userAdded&&p.pers)?`<div class="card"><div class="stat-title" style="font-weight:700;color:var(--dim);font-size:13px;margin-bottom:8px;">你给 TA 写的性格</div>
-        <div class="muted" style="font-size:13px;line-height:1.75;"><b>${p.pers.name}</b>：${p.pers.bio}<br><span style="color:var(--gold)">吃的口吻</span>：${p.pers.like.join(' / ')}　<span style="color:var(--bad)">雷点</span>：${p.pers.hate.join(' / ')}<br>声线：${voiceLabelOf(name)}（由性格决定）</div></div>`:''}
-      <div class="card"><div class="stat-title" style="font-weight:700;color:var(--dim);font-size:13px;margin-bottom:8px;">档案</div><div class="muted" style="font-size:13px;line-height:1.7;">${bio}</div></div>
+      <div class="card">
+        <div class="stat-title" style="font-weight:700;color:var(--dim);font-size:13px;margin-bottom:8px;">档案</div>
+        <div class="muted" style="font-size:13px;line-height:1.9;">
+          ${p.tag||(p.identity?(p.identity==='sentinel'?'哨兵':'向导'):'')}${isPartner?' · <span style="color:var(--spirit)">★ 你的搭档</span>':''}${(!isPartner&&bondable)?' · <span style="color:var(--bad)">💗 可更进一步</span>':''}<br>
+          ${p.identity?('身份：'+(p.identity==='sentinel'?'哨兵':'向导')):''}${p.animal&&p.animal!=='—'?('　精神体：'+p.animal):''}${p.pos?('　职位：'+p.pos):''}${af!=null?('　好感：'+affStageText(af)+' '+af+'/100'):''}<br>
+          ${(p.userAdded&&p.pers)?('<span style="color:var(--gold)">性格</span>：'+p.pers.name+'　'+p.pers.bio+'<br>吃的口吻：'+p.pers.like.join(' / ')+'　雷点：'+p.pers.hate.join(' / ')+'<br>声线：'+voiceLabelOf(name)+'（由性格决定）<br>'):''}
+          ${bio}
+        </div>
+      </div>
       ${relHtml}
       ${bondApply}
       ${canChat?`<button class="btn primary" onclick="callPerson('${name}')">📞 拨号</button>`:''}
